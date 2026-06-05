@@ -170,23 +170,3 @@ const CoveragePage: React.FC = () => {
 };
 
 export default CoveragePage;
-stifyContent: 'center', flexWrap: 'wrap' }}>
-            <Button variant="primary" onClick={() => router.push('/contact')}>
-              📩 Contact Us
-            </Button>
-            <Button variant="secondary" onClick={() => router.push('/book')}>
-              Book Anyway
-            </Button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-export default CoveragePage;
-
-  );
-};
-
-export default CoveragePage;
