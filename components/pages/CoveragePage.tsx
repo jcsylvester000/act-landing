@@ -7,41 +7,48 @@ import { Button } from '@/components/ui';
 const CoveragePage: React.FC = () => {
   const router = useRouter();
 
+  // Actual ACT service area — South Metro Manila / South Laguna (per client Q&A)
   const cities = [
     {
-      name: 'Quezon City', emoji: '🏙️',
-      highlight: 'Headquarters',
-      areas: ['Cubao', 'Diliman', 'Commonwealth', 'Project 6', 'Novaliches', 'Fairview', 'Batasan Hills', 'Quezon Ave corridor'],
-      techs: 3, avgResponse: '2–4 hrs',
+      name: 'Biñan', emoji: '🏘️',
+      highlight: 'Primary Hub',
+      areas: ['Sto. Tomas', 'San Jose', 'Platero', 'Zapote', 'Dela Paz Norte', 'Langkiwa', 'Malaban', 'San Antonio'],
+      techs: 2, avgResponse: '1–3 hrs',
     },
     {
-      name: 'Manila', emoji: '🌉',
+      name: 'San Pedro', emoji: '🌆',
       highlight: 'Full Coverage',
-      areas: ['Ermita', 'Malate', 'Paco', 'Pandacan', 'Tondo', 'Binondo', 'Sampaloc', 'Santa Mesa'],
-      techs: 2, avgResponse: '3–5 hrs',
-    },
-    {
-      name: 'Makati', emoji: '🏢',
-      highlight: 'CBD Zone',
-      areas: ['BGC corridor', 'Salcedo Village', 'Legaspi Village', 'Bel-Air', 'Rockwell', 'Poblacion'],
+      areas: ['Poblacion', 'San Antonio', 'Calendola', 'Cuyab', 'Landayan', 'Lanuza', 'Magsaysay', 'Nueva'],
       techs: 2, avgResponse: '2–4 hrs',
     },
     {
-      name: 'Pasig', emoji: '🏘️',
-      highlight: 'East Metro',
-      areas: ['Ortigas', 'Capitol Commons', 'Rosario', 'Cainta corridor', 'San Joaquin', 'Ugong'],
-      techs: 2, avgResponse: '3–5 hrs',
+      name: 'Sta. Rosa', emoji: '🏢',
+      highlight: 'Commercial Zone',
+      areas: ['Nuvali', 'Balibago', 'Tagapo', 'Kanluran', 'Macabling', 'Don Jose', 'Market Area', 'Pulong Sta. Cruz'],
+      techs: 2, avgResponse: '2–4 hrs',
     },
     {
-      name: 'Parañaque', emoji: '✈️',
-      highlight: 'South Coverage',
-      areas: ['BF Homes', 'Moonwalk', 'La Huerta', 'Merville', 'Sucat', 'Airport Road corridor'],
-      techs: 1, avgResponse: '4–6 hrs',
+      name: 'Cabuyao', emoji: '🏭',
+      highlight: 'Industrial & Residential',
+      areas: ['Banay-Banay', 'Barandal', 'Bigaa', 'Pulo', 'Marinig', 'Laguerta', 'Sala', 'San Sebastian'],
+      techs: 1, avgResponse: '3–5 hrs',
     },
     {
-      name: 'Mandaluyong', emoji: '🔀',
-      highlight: 'Central Hub',
-      areas: ['Wack-Wack', 'Highway Hills', 'Buayang Bato', 'Addition Hills', 'Shaw Blvd corridor'],
+      name: 'Muntinlupa', emoji: '🌉',
+      highlight: 'South Metro',
+      areas: ['Alabang', 'Ayala Alabang', 'Sucat', 'Putatan', 'Buli', 'Cupang', 'Bayanan', 'Tunasan'],
+      techs: 2, avgResponse: '2–4 hrs',
+    },
+    {
+      name: 'Carmona', emoji: '🌿',
+      highlight: 'Cavite Gateway',
+      areas: ['Lantic', 'Mabuhay', 'Maduya', 'Milagrosa', 'Poblacion', 'San Roque', 'Cabilang Baybay'],
+      techs: 1, avgResponse: '3–5 hrs',
+    },
+    {
+      name: 'GMA Cavite', emoji: '🏡',
+      highlight: 'Gen. Mariano Alvarez',
+      areas: ['Buenavista I-IV', 'Lapidario', 'Poblacion I-IV', 'Sampalucan', 'San Gabriel', 'San Jose', 'Sahud Ulan'],
       techs: 1, avgResponse: '3–5 hrs',
     },
   ];
@@ -57,10 +64,10 @@ const CoveragePage: React.FC = () => {
         <div style={{ maxWidth: 700, margin: '0 auto' }}>
           <div style={{ fontSize: 13, letterSpacing: 3, textTransform: 'uppercase', opacity: 0.7, marginBottom: 16, fontFamily: 'var(--font-mono)' }}>Service Areas</div>
           <h1 style={{ fontSize: 'clamp(32px, 6vw, 52px)', fontWeight: 800, fontFamily: 'var(--font-display)', margin: '0 0 16px', lineHeight: 1.1 }}>
-            We Cover Metro Manila
+            South Metro Manila<br />& South Laguna
           </h1>
           <p style={{ fontSize: 18, opacity: 0.85, lineHeight: 1.6, maxWidth: 500, margin: '0 auto 32px' }}>
-            6 cities, 11 dedicated technicians, same-day and next-day availability.
+            7 cities, 3 on-call technicians. Biñan · San Pedro · Sta. Rosa · Cabuyao · Muntinlupa · Carmona · GMA
           </p>
           <Button variant="primary" size="lg" onClick={() => router.push('/book')} style={{ background: 'var(--ember)', borderColor: 'var(--ember)' }}>
             Book in My Area
@@ -74,10 +81,10 @@ const CoveragePage: React.FC = () => {
           display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 20, marginBottom: 60,
         }}>
           {[
-            { number: '6', label: 'Cities Covered' },
-            { number: '11', label: 'Active Technicians' },
-            { number: '5,000+', label: 'Homes Served' },
-            { number: '2–6 hrs', label: 'Avg Response Time' },
+            { number: '7', label: 'Cities Covered' },
+            { number: '3', label: 'On-Call Technicians' },
+            { number: '20+', label: 'Regular Clients' },
+            { number: '1–5 hrs', label: 'Avg Response Time' },
           ].map(s => (
             <div key={s.label} style={{
               background: 'white', border: '1px solid var(--border)', borderRadius: 16,
@@ -159,6 +166,26 @@ const CoveragePage: React.FC = () => {
         </div>
       </div>
     </div>
+  );
+};
+
+export default CoveragePage;
+stifyContent: 'center', flexWrap: 'wrap' }}>
+            <Button variant="primary" onClick={() => router.push('/contact')}>
+              📩 Contact Us
+            </Button>
+            <Button variant="secondary" onClick={() => router.push('/book')}>
+              Book Anyway
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default CoveragePage;
+
   );
 };
 

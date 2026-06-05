@@ -20,15 +20,21 @@ export interface User {
   followUpStatus?: 'On track' | 'Due soon' | 'Overdue' | 'No response' | 'Converted';
   operatorStatus?: 'Active' | 'Inactive';
   assignedCities?: string[];
+  // New fields from client feedback
+  preferredTechnicianId?: string;
+  preferredTechnicianName?: string;
+  leadSource?: 'Referral' | 'Organic' | 'Facebook' | 'Walk-in' | 'Other';
   createdAt: string;
 }
 
 export type JobStatus = 'Pending' | 'Awaiting Payment' | 'Confirmed' | 'Scheduled' | 'Active' | 'Completed' | 'Cancelled';
 export type PaymentStatus = 'Unpaid' | 'Awaiting Confirmation' | 'Fee paid' | 'Fully paid' | 'Refunded';
 export type TimeSlot = 'AM' | 'PM' | 'Flexible';
-export type ServiceType = 'Basic Cleaning' | 'Deep Clean / Chemical Wash';
+// Updated service types based on client feedback — they already offer all four
+export type ServiceType = 'Basic Cleaning' | 'Deep Clean / Chemical Wash' | 'AC Installation' | 'Repair & Diagnostics' | 'Refrigerant Recharge';
 export type ACType = 'Split Type' | 'Window Type' | 'Cassette Type';
-export type CoverageCity = 'Quezon City' | 'Makati' | 'Pasig' | 'Taguig' | 'Mandaluyong' | 'Parañaque';
+// Updated to actual coverage area: South Metro Manila / South Laguna
+export type CoverageCity = 'Biñan' | 'San Pedro' | 'Sta. Rosa' | 'Cabuyao' | 'Muntinlupa' | 'Carmona' | 'GMA Cavite';
 
 export interface Job {
   id: string;
@@ -58,6 +64,13 @@ export interface Job {
   cancellationReason?: string;
   rating?: number;
   review?: string;
+  // New fields from client feedback
+  customPrice?: number;           // negotiated price override (client said all prices are negotiated)
+  requiresQuote?: boolean;        // true for installation / repair / freon — no fixed price
+  preferredTechnicianId?: string; // client may request a specific tech they trust
+  preferredTechnicianName?: string;
+  techFieldNotes?: string;        // technician's on-site report (issues found, scope changes)
+  isAdminCreated?: boolean;       // admin booked on behalf of client
 }
 
 export interface Technician {
@@ -85,7 +98,7 @@ export interface AppNotification {
 }
 type _N = AppNotification;
 
-export type MessageType = 'text' | 'calendar_invite' | 'status_update' | 'system';
+export type MessageType = 'text' | 'calendar_invite' | 'status_update' | 'system' | 'quick_reply';
 export type MessageSenderRole = UserRole | 'system';
 
 export interface CalendarInviteData {
@@ -109,6 +122,41 @@ export interface Message {
   createdAt: string;
   readBy: string[];
 }
+
+// ─── QUICK REPLY TEMPLATES ────────────────────────────────────────────────────
+// Pre-written messages the admin can send in one click — replaces texting on Messenger
+export interface QuickReplyTemplate {
+  id: string;
+  label: string;
+  category: 'greeting' | 'availability' | 'confirmation' | 'dispatch' | 'update' | 'payment' | 'completion';
+  template: string; // uses {{clientName}}, {{techName}}, {{date}}, {{time}}, {{amount}}, {{service}}, {{city}} placeholders
+  emoji: string;
+}
+
+export const QUICK_REPLY_TEMPLATES: QuickReplyTemplate[] = [
+  // Greeting
+  { id: 'QR01', label: 'Welcome', category: 'greeting', emoji: '👋', template: "Hi {{clientName}}! I'm your ACT coordinator. Thank you for choosing us for your {{service}} service. I'll take care of everything from here — I'll check technician availability and confirm your schedule shortly." },
+  { id: 'QR02', label: 'Inquiry Response', category: 'greeting', emoji: '💬', template: "Hi {{clientName}}! Thanks for reaching out to ACT Aircon Service. For {{service}}, our prices depend on the number of units. Could you let me know how many units you have and your preferred schedule?" },
+  // Availability
+  { id: 'QR03', label: 'Checking Availability', category: 'availability', emoji: '🔍', template: "Hi {{clientName}}! I'm currently checking technician availability for your preferred date of {{date}}. I'll confirm within the hour. 🙏" },
+  { id: 'QR04', label: 'Date Conflict', category: 'availability', emoji: '📅', template: "Hi {{clientName}}, unfortunately {{date}} is fully booked for {{city}}. Could you choose from {{time}} or another date? We want to make sure you get the best technician for the job!" },
+  // Confirmation
+  { id: 'QR05', label: 'Schedule Confirmed', category: 'confirmation', emoji: '✅', template: "Great news, {{clientName}}! {{techName}} is confirmed for your {{service}} on {{date}} {{time}}. I've sent a calendar invite — please tap Accept to lock it in. See you then!" },
+  { id: 'QR06', label: 'Payment Confirmed', category: 'confirmation', emoji: '💚', template: "Payment received, {{clientName}}! Your booking is now confirmed. {{techName}} will be at {{city}} on {{date}} {{time}}. We'll message you when the technician is on the way." },
+  // Dispatch
+  { id: 'QR07', label: 'Tech on the Way', category: 'dispatch', emoji: '🚗', template: "Hi {{clientName}}! {{techName}} is on the way to you right now. ETA: approximately 15–20 minutes. Please make sure someone is home to let them in. 🙏" },
+  { id: 'QR08', label: 'Tech Arrived', category: 'dispatch', emoji: '📍', template: "{{techName}} has arrived and is starting the service now. The job typically takes {{time}}. We'll update you once it's done!" },
+  // Update
+  { id: 'QR09', label: 'Issue Found', category: 'update', emoji: '⚠️', template: "Hi {{clientName}}, our technician found an issue that may affect the scope of work. {{techName}} will walk you through it on-site. Any additional work will be quoted before proceeding — nothing changes without your approval." },
+  { id: 'QR10', label: 'Scope Change', category: 'update', emoji: '📋', template: "Hi {{clientName}}, we need to adjust the service scope based on what the technician found. I'll send an updated quote shortly. Thank you for your understanding!" },
+  // Payment
+  { id: 'QR11', label: 'Payment Reminder', category: 'payment', emoji: '💳', template: "Hi {{clientName}}, just a reminder that the balance of ₱{{amount}} is due after today's service. You can pay via GCash, cash, or bank transfer. Let us know your preferred method!" },
+  { id: 'QR12', label: 'Payment Options', category: 'payment', emoji: '💰', template: "Hi {{clientName}}! For payment, we accept: GCash (we'll send the QR), cash on-site, or bank transfer. Which works best for you?" },
+  // Completion
+  { id: 'QR13', label: 'Service Done', category: 'completion', emoji: '🎉', template: "Great news, {{clientName}}! Your {{service}} is complete! Your AC should now be running at full efficiency. We'll send your billing summary shortly. Thank you for choosing ACT! 🙏❄️" },
+  { id: 'QR14', label: 'Review Request', category: 'completion', emoji: '⭐', template: "Hi {{clientName}}! We hope your {{service}} went smoothly! We'd love to hear your feedback — could you leave a quick rating? It helps us improve and helps other clients choose the right service. 🙏" },
+  { id: 'QR15', label: 'Follow-up Due', category: 'completion', emoji: '📆', template: "Hi {{clientName}}! It's been about 3 months since your last service. We recommend a check-up to keep your AC running efficiently — especially with the hot weather. Want to schedule a maintenance visit?" },
+];
 
 // ─── BILLING & INVOICE TYPES ──────────────────────────────────────────────────
 
@@ -191,7 +239,7 @@ export interface BillingStatement {
   adminReviewedAt?: string;
   sentToClientAt?: string;
   paidAt?: string;
-  paymentMethod?: 'GCash' | 'Cash' | 'Bank Transfer';
+  paymentMethod?: 'GCash' | 'Cash' | 'Bank Transfer' | 'Check';
   createdAt: string;
 }
 
@@ -244,9 +292,11 @@ interface AppState {
   markMessagesRead: (jobId: string, userId: string) => void;
   respondToCalendarInvite: (messageId: string, accepted: boolean, userId: string) => void;
 
-  // Operators
+  // Operators / Users
   addOperator: (op: Omit<User, 'id' | 'createdAt' | 'role'>) => void;
   updateOperator: (id: string, updates: Partial<User>) => void;
+  addUserAsAdmin: (data: Partial<User>) => User;  // admin creates client on behalf
+  updateUser: (id: string, updates: Partial<User>) => void;
 
   // Legacy invoices
   addInvoice: (inv: Omit<Invoice, 'id'>) => void;
@@ -268,6 +318,8 @@ interface AppState {
 }
 
 // ─── PRICING ──────────────────────────────────────────────────────────────────
+// Basic Cleaning & Deep Clean: fixed per-unit pricing
+// Installation, Repair, Freon: negotiated (price = 0 triggers quote flow)
 const SERVICE_PRICES: Record<ServiceType, Record<ACType, { price: number; fee: number }>> = {
   'Basic Cleaning': {
     'Split Type': { price: 1500, fee: 300 },
@@ -279,16 +331,35 @@ const SERVICE_PRICES: Record<ServiceType, Record<ACType, { price: number; fee: n
     'Window Type': { price: 2000, fee: 500 },
     'Cassette Type': { price: 3000, fee: 500 },
   },
+  // Quote-based — actual price set by admin per job
+  'AC Installation': {
+    'Split Type': { price: 0, fee: 0 },
+    'Window Type': { price: 0, fee: 0 },
+    'Cassette Type': { price: 0, fee: 0 },
+  },
+  'Repair & Diagnostics': {
+    'Split Type': { price: 0, fee: 0 },
+    'Window Type': { price: 0, fee: 0 },
+    'Cassette Type': { price: 0, fee: 0 },
+  },
+  'Refrigerant Recharge': {
+    'Split Type': { price: 0, fee: 0 },
+    'Window Type': { price: 0, fee: 0 },
+    'Cassette Type': { price: 0, fee: 0 },
+  },
 };
+
+// Services that require a custom quote instead of fixed pricing
+export const QUOTE_REQUIRED_SERVICES: ServiceType[] = ['AC Installation', 'Repair & Diagnostics', 'Refrigerant Recharge'];
 
 const generateId = () => Math.random().toString(36).substr(2, 9).toUpperCase();
 
 // ─── SEED DATA ────────────────────────────────────────────────────────────────
+// 3 outsourced technicians covering actual service area (South Metro / South Laguna)
 const seedTechnicians: Technician[] = [
-  { id: 'TECH001', fullName: 'Mark Santos', phone: '09171234567', type: 'Inhouse', skillLevel: 'Senior', coverageCities: ['Quezon City', 'Mandaluyong', 'Pasig'], isAvailable: true, active: true, averageRating: 4.8, totalJobsCompleted: 127, createdAt: '2026-01-15' },
-  { id: 'TECH002', fullName: 'Jose Reyes', phone: '09281234567', type: 'Inhouse', skillLevel: 'Lead', coverageCities: ['Makati', 'Taguig', 'Parañaque'], isAvailable: true, active: true, averageRating: 4.9, totalJobsCompleted: 215, createdAt: '2025-11-01' },
-  { id: 'TECH003', fullName: 'Carlo Cruz', phone: '09391234567', type: 'Outsource', skillLevel: 'Junior', coverageCities: ['Quezon City', 'Mandaluyong'], isAvailable: true, active: true, averageRating: 4.5, totalJobsCompleted: 43, createdAt: '2026-03-01' },
-  { id: 'TECH004', fullName: 'Rodel Garcia', phone: '09451234567', type: 'Outsource', skillLevel: 'Senior', coverageCities: ['Pasig', 'Makati', 'Taguig'], isAvailable: false, active: true, averageRating: 4.7, totalJobsCompleted: 89, createdAt: '2026-02-10' },
+  { id: 'TECH001', fullName: 'Mark Santos', phone: '09171234567', type: 'Outsource', skillLevel: 'Senior', coverageCities: ['Biñan', 'San Pedro', 'Muntinlupa'], isAvailable: true, active: true, averageRating: 4.8, totalJobsCompleted: 127, createdAt: '2026-01-15' },
+  { id: 'TECH002', fullName: 'Jose Reyes', phone: '09281234567', type: 'Outsource', skillLevel: 'Lead', coverageCities: ['Sta. Rosa', 'Cabuyao', 'Biñan'], isAvailable: true, active: true, averageRating: 4.9, totalJobsCompleted: 215, createdAt: '2025-11-01' },
+  { id: 'TECH003', fullName: 'Carlo Cruz', phone: '09391234567', type: 'Outsource', skillLevel: 'Junior', coverageCities: ['Carmona', 'GMA Cavite', 'San Pedro'], isAvailable: true, active: true, averageRating: 4.5, totalJobsCompleted: 43, createdAt: '2026-03-01' },
 ];
 
 const fmt = (d: Date) => d.toISOString().split('T')[0];
@@ -296,33 +367,40 @@ const daysAgo = (n: number) => { const d = new Date(); d.setDate(d.getDate() - n
 const daysAhead = (n: number) => { const d = new Date(); d.setDate(d.getDate() + n); return fmt(d); };
 
 const seedJobs: Job[] = [
-  { id: 'JOB001', clientId: 'CLIENT001', clientName: 'Ana Villanueva', serviceType: 'Basic Cleaning', acType: 'Split Type', numberOfUnits: 2, serviceAddress: '45 Katipunan Ave', city: 'Quezon City', preferredDate: daysAhead(2), timeSlot: 'AM', totalPrice: 3000, reservationFee: 300, balanceDue: 2700, paymentStatus: 'Fee paid', status: 'Confirmed', technicianId: 'TECH001', technicianName: 'Mark Santos', operatorId: 'OP001', operatorName: 'Maria Santos', createdAt: daysAgo(1), nextDueDate: daysAhead(90) },
-  { id: 'JOB002', clientId: 'CLIENT002', clientName: 'Bong Mendoza', serviceType: 'Deep Clean / Chemical Wash', acType: 'Split Type', numberOfUnits: 3, serviceAddress: '12 Ayala Ave', city: 'Makati', preferredDate: daysAhead(1), timeSlot: 'PM', totalPrice: 7500, reservationFee: 500, balanceDue: 7000, paymentStatus: 'Awaiting Confirmation', status: 'Awaiting Payment', operatorId: 'OP002', operatorName: 'Danny Cruz', createdAt: daysAgo(0), nextDueDate: daysAhead(180) },
-  { id: 'JOB003', clientId: 'CLIENT003', clientName: 'Cris Lim', serviceType: 'Basic Cleaning', acType: 'Window Type', numberOfUnits: 1, serviceAddress: '88 Ortigas Ave', city: 'Pasig', preferredDate: daysAgo(7), timeSlot: 'AM', totalPrice: 1200, reservationFee: 300, balanceDue: 0, paymentStatus: 'Fully paid', status: 'Completed', technicianId: 'TECH002', technicianName: 'Jose Reyes', operatorId: 'OP001', operatorName: 'Maria Santos', createdAt: daysAgo(10), nextDueDate: daysAhead(83), rating: 5, review: 'Excellent service!' },
-  { id: 'JOB004', clientId: 'CLIENT004', clientName: 'Diana Torres', serviceType: 'Deep Clean / Chemical Wash', acType: 'Cassette Type', numberOfUnits: 4, serviceAddress: '200 BGC High Street', city: 'Taguig', preferredDate: daysAgo(3), timeSlot: 'AM', totalPrice: 12000, reservationFee: 500, balanceDue: 0, paymentStatus: 'Fully paid', status: 'Completed', technicianId: 'TECH002', technicianName: 'Jose Reyes', operatorId: 'OP002', operatorName: 'Danny Cruz', createdAt: daysAgo(5), nextDueDate: daysAhead(177), rating: 4, review: 'Very thorough.' },
-  { id: 'JOB005', clientId: 'CLIENT005', clientName: 'Enzo Pascual', serviceType: 'Basic Cleaning', acType: 'Split Type', numberOfUnits: 1, serviceAddress: '55 Shaw Blvd', city: 'Mandaluyong', preferredDate: fmt(new Date()), timeSlot: 'AM', totalPrice: 1500, reservationFee: 300, balanceDue: 1200, paymentStatus: 'Fee paid', status: 'Active', technicianId: 'TECH001', technicianName: 'Mark Santos', operatorId: 'OP001', operatorName: 'Maria Santos', createdAt: daysAgo(2), nextDueDate: daysAhead(90) },
-  { id: 'JOB006', clientId: 'CLIENT001', clientName: 'Ana Villanueva', serviceType: 'Basic Cleaning', acType: 'Split Type', numberOfUnits: 2, serviceAddress: '45 Katipunan Ave', city: 'Quezon City', preferredDate: daysAgo(95), timeSlot: 'PM', totalPrice: 3000, reservationFee: 300, balanceDue: 0, paymentStatus: 'Fully paid', status: 'Completed', technicianId: 'TECH001', technicianName: 'Mark Santos', operatorId: 'OP001', operatorName: 'Maria Santos', createdAt: daysAgo(97), nextDueDate: daysAgo(5), rating: 5, review: 'Always reliable!' },
-  { id: 'JOB007', clientId: 'CLIENT006', clientName: 'Fia Navarro', serviceType: 'Basic Cleaning', acType: 'Split Type', numberOfUnits: 2, serviceAddress: '10 Sucat Rd', city: 'Parañaque', preferredDate: daysAhead(3), timeSlot: 'PM', totalPrice: 3000, reservationFee: 300, balanceDue: 2700, paymentStatus: 'Unpaid', status: 'Pending', createdAt: daysAgo(0), nextDueDate: daysAhead(93) },
+  { id: 'JOB001', clientId: 'CLIENT001', clientName: 'Ana Villanueva', serviceType: 'Basic Cleaning', acType: 'Split Type', numberOfUnits: 2, serviceAddress: '45 Brgy. Sto. Tomas', city: 'Biñan', preferredDate: daysAhead(2), timeSlot: 'AM', totalPrice: 3000, reservationFee: 300, balanceDue: 2700, paymentStatus: 'Fee paid', status: 'Confirmed', technicianId: 'TECH001', technicianName: 'Mark Santos', operatorId: 'OP001', operatorName: 'Maria Santos', createdAt: daysAgo(1), nextDueDate: daysAhead(90), preferredTechnicianId: 'TECH001', preferredTechnicianName: 'Mark Santos' },
+  { id: 'JOB002', clientId: 'CLIENT002', clientName: 'Bong Mendoza', serviceType: 'Deep Clean / Chemical Wash', acType: 'Split Type', numberOfUnits: 3, serviceAddress: '12 San Antonio St', city: 'Sta. Rosa', preferredDate: daysAhead(1), timeSlot: 'PM', totalPrice: 7500, reservationFee: 500, balanceDue: 7000, paymentStatus: 'Awaiting Confirmation', status: 'Awaiting Payment', operatorId: 'OP001', operatorName: 'Maria Santos', createdAt: daysAgo(0), nextDueDate: daysAhead(180) },
+  { id: 'JOB003', clientId: 'CLIENT003', clientName: 'Cris Lim', serviceType: 'Basic Cleaning', acType: 'Window Type', numberOfUnits: 1, serviceAddress: '88 Brgy. Poblacion', city: 'San Pedro', preferredDate: daysAgo(7), timeSlot: 'AM', totalPrice: 1200, reservationFee: 300, balanceDue: 0, paymentStatus: 'Fully paid', status: 'Completed', technicianId: 'TECH002', technicianName: 'Jose Reyes', operatorId: 'OP001', operatorName: 'Maria Santos', createdAt: daysAgo(10), nextDueDate: daysAhead(83), rating: 5, review: 'Excellent service!' },
+  { id: 'JOB004', clientId: 'CLIENT004', clientName: 'Diana Torres', serviceType: 'Deep Clean / Chemical Wash', acType: 'Cassette Type', numberOfUnits: 4, serviceAddress: '200 Nuvali Blvd', city: 'Sta. Rosa', preferredDate: daysAgo(3), timeSlot: 'AM', totalPrice: 12000, reservationFee: 500, balanceDue: 0, paymentStatus: 'Fully paid', status: 'Completed', technicianId: 'TECH002', technicianName: 'Jose Reyes', operatorId: 'OP001', operatorName: 'Maria Santos', createdAt: daysAgo(5), nextDueDate: daysAhead(177), rating: 4, review: 'Very thorough.' },
+  { id: 'JOB005', clientId: 'CLIENT005', clientName: 'Enzo Pascual', serviceType: 'Basic Cleaning', acType: 'Split Type', numberOfUnits: 1, serviceAddress: '55 Brgy. Alabang', city: 'Muntinlupa', preferredDate: fmt(new Date()), timeSlot: 'AM', totalPrice: 1500, reservationFee: 300, balanceDue: 1200, paymentStatus: 'Fee paid', status: 'Active', technicianId: 'TECH001', technicianName: 'Mark Santos', operatorId: 'OP001', operatorName: 'Maria Santos', createdAt: daysAgo(2), nextDueDate: daysAhead(90) },
+  { id: 'JOB006', clientId: 'CLIENT001', clientName: 'Ana Villanueva', serviceType: 'Basic Cleaning', acType: 'Split Type', numberOfUnits: 2, serviceAddress: '45 Brgy. Sto. Tomas', city: 'Biñan', preferredDate: daysAgo(95), timeSlot: 'PM', totalPrice: 3000, reservationFee: 300, balanceDue: 0, paymentStatus: 'Fully paid', status: 'Completed', technicianId: 'TECH001', technicianName: 'Mark Santos', operatorId: 'OP001', operatorName: 'Maria Santos', createdAt: daysAgo(97), nextDueDate: daysAgo(5), rating: 5, review: 'Always reliable!' },
+  { id: 'JOB007', clientId: 'CLIENT006', clientName: 'Fia Navarro', serviceType: 'Basic Cleaning', acType: 'Split Type', numberOfUnits: 2, serviceAddress: '10 Brgy. Putatan', city: 'Muntinlupa', preferredDate: daysAhead(3), timeSlot: 'PM', totalPrice: 3000, reservationFee: 300, balanceDue: 2700, paymentStatus: 'Unpaid', status: 'Pending', createdAt: daysAgo(0), nextDueDate: daysAhead(93) },
+  // New: a repair/diagnostics job (quote-based) to demonstrate that flow
+  { id: 'JOB008', clientId: 'CLIENT002', clientName: 'Bong Mendoza', serviceType: 'Repair & Diagnostics', acType: 'Split Type', numberOfUnits: 1, serviceAddress: '12 San Antonio St', city: 'Sta. Rosa', preferredDate: daysAhead(4), timeSlot: 'AM', totalPrice: 0, reservationFee: 0, balanceDue: 0, paymentStatus: 'Unpaid', status: 'Pending', requiresQuote: true, createdAt: daysAgo(0), specialInstructions: 'AC not cooling properly, making clicking noise when starting up.', nextDueDate: undefined },
 ];
 
 const seedUsers: User[] = [
   { id: 'ADMIN001', email: 'admin@act.ph', firstName: 'Admin', lastName: 'ACT', phone: '09171111111', role: 'admin', createdAt: '2026-01-01' },
-  { id: 'CLIENT001', email: 'ana@email.com', firstName: 'Ana', lastName: 'Villanueva', phone: '09172345678', role: 'client', address: '45 Katipunan Ave', city: 'Quezon City', clientType: 'Residential', acUnits: 2, lastServiceDate: daysAgo(95), nextDueDate: daysAgo(5), followUpStatus: 'Overdue', createdAt: '2026-02-01' },
-  { id: 'OP001', email: 'maria@act.ph', firstName: 'Maria', lastName: 'Santos', phone: '09181234567', role: 'operator', operatorStatus: 'Active', assignedCities: ['Quezon City', 'Pasig', 'Mandaluyong'], createdAt: '2026-01-10' },
-  { id: 'OP002', email: 'danny@act.ph', firstName: 'Danny', lastName: 'Cruz', phone: '09191234567', role: 'operator', operatorStatus: 'Active', assignedCities: ['Makati', 'Taguig', 'Parañaque'], createdAt: '2026-01-15' },
+  { id: 'CLIENT001', email: 'ana@email.com', firstName: 'Ana', lastName: 'Villanueva', phone: '09172345678', role: 'client', address: '45 Brgy. Sto. Tomas', city: 'Biñan', clientType: 'Residential', acUnits: 2, lastServiceDate: daysAgo(95), nextDueDate: daysAgo(5), followUpStatus: 'Overdue', leadSource: 'Referral', preferredTechnicianId: 'TECH001', preferredTechnicianName: 'Mark Santos', createdAt: '2026-02-01' },
+  { id: 'CLIENT002', email: 'bong@email.com', firstName: 'Bong', lastName: 'Mendoza', phone: '09183456789', role: 'client', address: '12 San Antonio St', city: 'Sta. Rosa', clientType: 'Commercial', acUnits: 4, followUpStatus: 'On track', leadSource: 'Referral', createdAt: '2026-02-15' },
+  { id: 'CLIENT003', email: 'cris@email.com', firstName: 'Cris', lastName: 'Lim', phone: '09194567890', role: 'client', address: '88 Brgy. Poblacion', city: 'San Pedro', clientType: 'Residential', acUnits: 1, followUpStatus: 'On track', leadSource: 'Organic', createdAt: '2026-03-01' },
+  { id: 'CLIENT004', email: 'diana@email.com', firstName: 'Diana', lastName: 'Torres', phone: '09175678901', role: 'client', address: '200 Nuvali Blvd', city: 'Sta. Rosa', clientType: 'Commercial', acUnits: 4, followUpStatus: 'On track', leadSource: 'Referral', createdAt: '2026-01-20' },
+  { id: 'CLIENT005', email: 'enzo@email.com', firstName: 'Enzo', lastName: 'Pascual', phone: '09186789012', role: 'client', address: '55 Brgy. Alabang', city: 'Muntinlupa', clientType: 'Residential', acUnits: 1, followUpStatus: 'On track', leadSource: 'Organic', createdAt: '2026-03-10' },
+  { id: 'CLIENT006', email: 'fia@email.com', firstName: 'Fia', lastName: 'Navarro', phone: '09197890123', role: 'client', address: '10 Brgy. Putatan', city: 'Muntinlupa', clientType: 'Residential', acUnits: 2, followUpStatus: 'On track', leadSource: 'Referral', createdAt: '2026-04-01' },
+  { id: 'OP001', email: 'maria@act.ph', firstName: 'Maria', lastName: 'Santos', phone: '09181234567', role: 'operator', operatorStatus: 'Active', assignedCities: ['Biñan', 'San Pedro', 'Muntinlupa', 'Sta. Rosa', 'Cabuyao', 'Carmona', 'GMA Cavite'], createdAt: '2026-01-10' },
 ];
 
 const seedMessages: Message[] = [
-  { id: 'MSG001', jobId: 'JOB001', senderId: 'OP001', senderName: 'Maria Santos', senderRole: 'operator', content: "Hi Ana! I'm Maria, your ACT coordinator. I'll be managing your aircon cleaning this week. Technician Mark Santos will handle the job.", type: 'text', createdAt: daysAgo(1), readBy: ['CLIENT001', 'OP001'] },
-  { id: 'MSG002', jobId: 'JOB001', senderId: 'OP001', senderName: 'Maria Santos', senderRole: 'operator', content: "I've sent you a calendar confirmation. Please confirm.", type: 'calendar_invite', calendarData: { confirmedDate: daysAhead(2), timeSlot: 'AM', technicianName: 'Mark Santos', address: '45 Katipunan Ave, Quezon City', serviceType: 'Basic Cleaning — 2 Split Type units', accepted: undefined }, createdAt: daysAgo(0), readBy: ['OP001'] },
-  { id: 'MSG003', jobId: 'JOB005', senderId: 'OP001', senderName: 'Maria Santos', senderRole: 'operator', content: 'Hi Enzo! Mark Santos is on his way. ETA: 15 minutes.', type: 'text', createdAt: daysAgo(0), readBy: ['OP001'] },
-  { id: 'MSG004', jobId: 'JOB005', senderId: 'OP001', senderName: 'Maria Santos', senderRole: 'operator', content: 'Mark has arrived and is cleaning your unit.', type: 'status_update', createdAt: daysAgo(0), readBy: ['OP001'] },
-  { id: 'MSG005', jobId: 'JOB002', senderId: 'OP002', senderName: 'Danny Cruz', senderRole: 'operator', content: "Hi Bong! I'm Danny from ACT. Your payment is under review. Once verified I'll send over the calendar invite.", type: 'text', createdAt: daysAgo(0), readBy: ['OP002'] },
+  { id: 'MSG001', jobId: 'JOB001', senderId: 'OP001', senderName: 'Maria Santos', senderRole: 'operator', content: "Hi Ana! I'm Maria, your ACT coordinator. I'll be managing your aircon cleaning this week. Mark Santos will handle the job — he's serviced your unit before and knows your setup well.", type: 'text', createdAt: daysAgo(1), readBy: ['CLIENT001', 'OP001'] },
+  { id: 'MSG002', jobId: 'JOB001', senderId: 'OP001', senderName: 'Maria Santos', senderRole: 'operator', content: "I've sent you a calendar confirmation. Please confirm.", type: 'calendar_invite', calendarData: { confirmedDate: daysAhead(2), timeSlot: 'AM', technicianName: 'Mark Santos', address: '45 Brgy. Sto. Tomas, Biñan', serviceType: 'Basic Cleaning — 2 Split Type units', accepted: undefined }, createdAt: daysAgo(0), readBy: ['OP001'] },
+  { id: 'MSG003', jobId: 'JOB005', senderId: 'OP001', senderName: 'Maria Santos', senderRole: 'operator', content: 'Hi Enzo! Mark Santos is on his way to Muntinlupa. ETA: 15 minutes.', type: 'text', createdAt: daysAgo(0), readBy: ['OP001'] },
+  { id: 'MSG004', jobId: 'JOB005', senderId: 'OP001', senderName: 'Maria Santos', senderRole: 'operator', content: 'Mark has arrived and is starting the cleaning. Should take about 45–60 minutes.', type: 'status_update', createdAt: daysAgo(0), readBy: ['OP001'] },
+  { id: 'MSG005', jobId: 'JOB002', senderId: 'OP001', senderName: 'Maria Santos', senderRole: 'operator', content: "Hi Bong! I'm Maria from ACT. Your payment screenshot is under review. Once confirmed, I'll send your calendar invite with the technician details.", type: 'text', createdAt: daysAgo(0), readBy: ['OP001'] },
+  { id: 'MSG006', jobId: 'JOB007', senderId: 'ADMIN001', senderName: 'ACT Admin', senderRole: 'admin', content: "Hi Fia! Thank you for booking with ACT. I'm checking technician availability for your preferred date. I'll confirm shortly!", type: 'text', createdAt: daysAgo(0), readBy: ['ADMIN001'] },
+  { id: 'MSG007', jobId: 'JOB008', senderId: 'ADMIN001', senderName: 'ACT Admin', senderRole: 'admin', content: "Hi Bong! Got your repair request — clicking noise on startup is usually a refrigerant or fan issue. I'll have our technician do a full diagnostic. I'll check availability and confirm your schedule!", type: 'text', createdAt: daysAgo(0), readBy: ['ADMIN001'] },
 ];
 
 // ─── SEED SERVICE INVOICES ────────────────────────────────────────────────────
 const seedServiceInvoices: ServiceInvoice[] = [
-  // JOB001 — sent to Ana, awaiting her response (shows cancel-on-high-price workflow)
   {
     id: 'SINV-JOB001-001',
     jobId: 'JOB001',
@@ -332,18 +410,17 @@ const seedServiceInvoices: ServiceInvoice[] = [
     operatorName: 'Maria Santos',
     lineItems: [
       { id: 'LI001', description: 'Basic Cleaning — Split Type AC (×2 units)', category: 'Service', quantity: 2, unitPrice: 1500, amount: 3000 },
-      { id: 'LI002', description: 'Travel & Logistics — Quezon City', category: 'Travel', quantity: 1, unitPrice: 0, amount: 0 },
+      { id: 'LI002', description: 'Travel & Logistics — Biñan', category: 'Travel', quantity: 1, unitPrice: 0, amount: 0 },
     ],
     subtotal: 3000,
     reservationFeePaid: 300,
     balanceDue: 2700,
     totalAmount: 3000,
     status: 'Sent',
-    notes: 'Price per unit is ₱1,500. Reservation fee of ₱300 already collected. Balance of ₱2,700 due after service.',
+    notes: 'Price per unit is ₱1,500. Balance of ₱2,700 due after service.',
     sentAt: daysAgo(0),
     createdAt: daysAgo(1),
   },
-  // JOB005 — accepted invoice for Enzo's active job
   {
     id: 'SINV-JOB005-001',
     jobId: 'JOB005',
@@ -369,7 +446,6 @@ const seedServiceInvoices: ServiceInvoice[] = [
 
 // ─── SEED BILLING STATEMENTS ──────────────────────────────────────────────────
 const seedBillingStatements: BillingStatement[] = [
-  // JOB003 — Cris's completed job, billing sent to client
   {
     id: 'BILL-JOB003-001',
     jobId: 'JOB003',
@@ -396,7 +472,6 @@ const seedBillingStatements: BillingStatement[] = [
     paymentMethod: 'Cash',
     createdAt: daysAgo(8),
   },
-  // JOB005 — Enzo's active job, billing draft by operator (not yet submitted)
   {
     id: 'BILL-JOB005-001',
     jobId: 'JOB005',
@@ -416,14 +491,13 @@ const seedBillingStatements: BillingStatement[] = [
     workNotes: 'Unit cleaned. Coils washed, drain cleared, filters cleaned. Cooling performance restored.',
     createdAt: daysAgo(0),
   },
-  // JOB004 — Diana's completed job, billing submitted to admin for review
   {
     id: 'BILL-JOB004-001',
     jobId: 'JOB004',
     clientId: 'CLIENT004',
     clientName: 'Diana Torres',
-    operatorId: 'OP002',
-    operatorName: 'Danny Cruz',
+    operatorId: 'OP001',
+    operatorName: 'Maria Santos',
     technicianName: 'Jose Reyes',
     lineItems: [
       { id: 'BL004', description: 'Deep Clean / Chemical Wash — Cassette Type (×4 units)', category: 'Service', quantity: 4, unitPrice: 3000, amount: 12000 },
@@ -501,9 +575,31 @@ export const useStore = create<AppState>()(
       markMessagesRead: (jid, uid) => set(s => ({ messages: s.messages.map(m => m.jobId === jid && !m.readBy.includes(uid) ? { ...m, readBy: [...m.readBy, uid] } : m) })),
       respondToCalendarInvite: (mid, accepted, uid) => set(s => ({ messages: s.messages.map(m => m.id === mid && m.calendarData ? { ...m, calendarData: { ...m.calendarData, accepted }, readBy: [...new Set([...m.readBy, uid])] } : m) })),
 
-      // ── OPERATORS ─────────────────────────────────────────────────────────
+      // ── OPERATORS / USERS ──────────────────────────────────────────────────
       addOperator: (op) => { const o: User = { ...op, id: 'OP' + generateId(), role: 'operator', operatorStatus: 'Active', createdAt: new Date().toISOString() }; set(s => ({ users: [...s.users, o] })); },
       updateOperator: (id, u) => set(s => ({ users: s.users.map(x => x.id === id ? { ...x, ...u } : x) })),
+      updateUser: (id, u) => set(s => ({ users: s.users.map(x => x.id === id ? { ...x, ...u } : x) })),
+      addUserAsAdmin: (data) => {
+        const nu: User = {
+          id: 'CLIENT' + generateId(),
+          email: data.email || `client_${generateId()}@act.ph`,
+          firstName: data.firstName || 'Client',
+          lastName: data.lastName || '',
+          phone: data.phone || '09170000000',
+          role: 'client',
+          address: data.address,
+          city: data.city,
+          clientType: data.clientType || 'Residential',
+          acUnits: data.acUnits || 1,
+          followUpStatus: 'On track',
+          leadSource: data.leadSource || 'Referral',
+          preferredTechnicianId: data.preferredTechnicianId,
+          preferredTechnicianName: data.preferredTechnicianName,
+          createdAt: new Date().toISOString(),
+        };
+        set(s => ({ users: [...s.users, nu] }));
+        return nu;
+      },
 
       // ── LEGACY INVOICES ───────────────────────────────────────────────────
       addInvoice: (inv) => set(s => ({ invoices: [...s.invoices, { ...inv, id: 'INV' + generateId() }] })),
@@ -519,7 +615,6 @@ export const useStore = create<AppState>()(
       sendServiceInvoice: (id) => {
         const now = new Date().toISOString();
         set(s => ({ serviceInvoices: s.serviceInvoices.map(i => i.id === id ? { ...i, status: 'Sent' as InvoiceStatus, sentAt: now } : i) }));
-        // Notify client
         const inv = get().serviceInvoices.find(i => i.id === id);
         if (inv) get().addNotification({ userId: inv.clientId, jobId: inv.jobId, message: `Your service invoice ${inv.id} for ₱${inv.totalAmount.toLocaleString()} has been sent. Please review and respond.`, type: 'info', read: false });
       },
@@ -529,17 +624,14 @@ export const useStore = create<AppState>()(
         set(s => ({ serviceInvoices: s.serviceInvoices.map(i => i.id === id ? { ...i, status: statusMap[action], clientNote: note, respondedAt: now } : i) }));
         const inv = get().serviceInvoices.find(i => i.id === id);
         if (inv) {
-          // If cancelled, update job
           if (action === 'cancel') {
             get().updateJob(inv.jobId, { status: 'Cancelled', cancellationReason: note || 'Client cancelled after reviewing invoice.' });
           }
-          // Notify operator
           get().addNotification({
             userId: inv.operatorId, jobId: inv.jobId,
             message: action === 'accept' ? `Client ${inv.clientName} accepted invoice ${inv.id}.` : action === 'revision' ? `Client ${inv.clientName} requested a revision on invoice ${inv.id}: "${note}"` : `Client ${inv.clientName} cancelled booking ${inv.jobId} after reviewing invoice ${inv.id}.`,
             type: action === 'accept' ? 'success' : action === 'revision' ? 'warning' : 'error', read: false,
           });
-          // Also notify admin
           get().addNotification({ userId: 'ADMIN001', jobId: inv.jobId, message: `Invoice ${inv.id}: client ${action === 'accept' ? 'accepted' : action === 'revision' ? 'requested revision' : 'cancelled after reviewing'}.`, type: action === 'accept' ? 'success' : 'warning', read: false });
         }
       },
@@ -574,7 +666,6 @@ export const useStore = create<AppState>()(
         set(s => ({
           billingStatements: s.billingStatements.map(b => b.id === id ? { ...b, status: 'Paid' as BillingStatus, paidAt: now, paymentMethod, amountDue: 0 } : b),
         }));
-        // Update job payment status
         const bill = get().billingStatements.find(b => b.id === id);
         if (bill) {
           get().updateJob(bill.jobId, { paymentStatus: 'Fully paid', balanceDue: 0 });
@@ -583,7 +674,7 @@ export const useStore = create<AppState>()(
       },
     }),
     {
-      name: 'act-store-v5',
+      name: 'act-store-v6',
       partialize: (s) => ({
         currentUser: s.currentUser,
         users: s.users,

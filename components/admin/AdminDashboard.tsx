@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useBreakpoint } from '@/hooks/useBreakpoint';
-import { useStore } from '@/store';
+import { useStore, QUICK_REPLY_TEMPLATES } from '@/store';
 import type { Job, Technician, Message, ServiceInvoice, BillingStatement } from '@/store';
 import { Button, Badge, Card, StatCard, Modal, Select, Input, Toast } from '@/components/ui';
 import InvoiceCard from '@/components/billing/InvoiceCard';
@@ -893,27 +893,44 @@ const OperatorsPanel: React.FC = () => {
   );
 };
 
-// ─── MESSAGES MONITOR PANEL ───────────────────────────────────────────────────
+// ─── MESSAGES HUB — replaces third-party comms (Messenger / text / calls) ────
+// Unified admin inbox: all job threads, quick-reply templates, tech availability check
+
 const MessagesMonitorPanel: React.FC<{ jobs: Job[] }> = ({ jobs }) => {
-  const { messages, users, currentUser, sendMessage } = useStore();
+  const { messages, users, technicians, currentUser, sendMessage, updateJob, markMessagesRead } = useStore();
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [newMessage, setNewMessage] = useState('');
-  const [threadFilter, setThreadFilter] = useState<'all' | 'unread' | 'operator'>('all');
-
+  const [threadFilter, setThreadFilter] = useState<'all' | 'unread' | 'active'>('all');
+  const [showQuickReplies, setShowQuickReplies] = useState(false);
+  const [qrCategory, setQrCategory] = useState<string>('all');
+  const [showTechCheck, setShowTechCheck] = useState(false);
+  const [showCalInvite, setShowCalInvite] = useState(false);
+  const [calDate, setCalDate] = useState('');
+  const [calTime, setCalTime] = useState<'AM' | 'PM' | 'Flexible'>('AM');
+  const [calTechId, setCalTechId] = useState('');
+  const [toast, setToast] = useState<{ message: string; visible: boolean }>({ message: '', visible: false });
+  const messagesEndRef = React.useRef<HTMLDivElement>(null);
   const ADMIN_ID = 'ADMIN001';
 
-  // Derive threads: all jobs that have at least one message, or all assigned jobs
-  const jobsWithMessages = jobs.filter(j =>
-    messages.some(m => m.jobId === j.id)
-  );
+  const showToast = (msg: string) => { setToast({ message: msg, visible: true }); setTimeout(() => setToast(t => ({ ...t, visible: false })), 2500); };
 
-  // Compute unread count for admin per job
+  // Build thread list: all jobs with messages + active/pending jobs without messages yet
+  const activeJobIds = jobs.filter(j => !['Completed', 'Cancelled'].includes(j.status)).map(j => j.id);
+  const jobsWithMessages = jobs.filter(j => messages.some(m => m.jobId === j.id));
+  const allThreadJobs = [...new Map([...jobsWithMessages, ...jobs.filter(j => activeJobIds.includes(j.id))].map(j => [j.id, j])).values()]
+    .sort((a, b) => {
+      const aLast = messages.filter(m => m.jobId === a.id).slice(-1)[0]?.createdAt || a.createdAt;
+      const bLast = messages.filter(m => m.jobId === b.id).slice(-1)[0]?.createdAt || b.createdAt;
+      return new Date(bLast).getTime() - new Date(aLast).getTime();
+    });
+
   const unreadForJob = (jobId: string) =>
     messages.filter(m => m.jobId === jobId && !m.readBy?.includes(ADMIN_ID)).length;
+  const totalUnread = allThreadJobs.reduce((s, j) => s + unreadForJob(j.id), 0);
 
-  const filteredThreadJobs = jobsWithMessages.filter(j => {
+  const filteredThreadJobs = allThreadJobs.filter(j => {
     if (threadFilter === 'unread') return unreadForJob(j.id) > 0;
-    if (threadFilter === 'operator') return !!j.operatorId;
+    if (threadFilter === 'active') return !['Completed', 'Cancelled'].includes(j.status);
     return true;
   });
 
@@ -922,6 +939,16 @@ const MessagesMonitorPanel: React.FC<{ jobs: Job[] }> = ({ jobs }) => {
     ? messages.filter(m => m.jobId === selectedJobId).sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
     : [];
 
+  // Mark messages as read when thread is selected
+  React.useEffect(() => {
+    if (selectedJobId) markMessagesRead(selectedJobId, ADMIN_ID);
+  }, [selectedJobId, markMessagesRead]);
+
+  // Scroll to bottom on new messages
+  React.useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [threadMessages.length]);
+
   const lastMessageForJob = (jobId: string): Message | undefined => {
     const jobMsgs = messages.filter(m => m.jobId === jobId);
     if (!jobMsgs.length) return undefined;
@@ -929,195 +956,320 @@ const MessagesMonitorPanel: React.FC<{ jobs: Job[] }> = ({ jobs }) => {
   };
 
   const handleSend = () => {
-    if (!newMessage.trim() || !selectedJobId || !currentUser) return;
+    if (!newMessage.trim() || !selectedJobId) return;
+    sendMessage({ jobId: selectedJobId, senderId: ADMIN_ID, senderName: 'ACT Admin', senderRole: 'admin', type: 'text', content: newMessage.trim(), readBy: [ADMIN_ID] });
+    setNewMessage('');
+    setShowQuickReplies(false);
+  };
+
+  // Quick reply template variable substitution
+  const applyTemplate = (template: string) => {
+    if (!selectedJob) return template;
+    const client = users.find(u => u.id === selectedJob.clientId);
+    const tech = technicians.find(t => t.id === selectedJob.technicianId);
+    return template
+      .replace(/{{clientName}}/g, client?.firstName || selectedJob.clientName.split(' ')[0])
+      .replace(/{{techName}}/g, tech?.fullName || selectedJob.technicianName || 'our technician')
+      .replace(/{{date}}/g, selectedJob.preferredDate)
+      .replace(/{{time}}/g, selectedJob.timeSlot)
+      .replace(/{{service}}/g, selectedJob.serviceType)
+      .replace(/{{city}}/g, selectedJob.city)
+      .replace(/{{amount}}/g, selectedJob.balanceDue.toLocaleString());
+  };
+
+  // Send calendar invite
+  const handleSendCalInvite = () => {
+    if (!selectedJobId || !calDate || !calTechId) return;
+    const tech = technicians.find(t => t.id === calTechId);
+    if (!tech || !selectedJob) return;
     sendMessage({
-      jobId: selectedJobId,
-      senderId: ADMIN_ID,
-      senderName: 'ACT Admin',
-      senderRole: 'admin',
-      type: 'text',
-      content: newMessage.trim(),
+      jobId: selectedJobId, senderId: ADMIN_ID, senderName: 'ACT Admin', senderRole: 'admin',
+      type: 'calendar_invite',
+      content: 'Calendar invite sent. Please accept to confirm your schedule.',
+      calendarData: { confirmedDate: calDate, timeSlot: calTime, technicianName: tech.fullName, address: selectedJob.serviceAddress + ', ' + selectedJob.city, serviceType: selectedJob.serviceType + (selectedJob.numberOfUnits > 1 ? ` — ${selectedJob.numberOfUnits} units` : '') },
       readBy: [ADMIN_ID],
     });
-    setNewMessage('');
+    updateJob(selectedJobId, { technicianId: calTechId, technicianName: tech.fullName, status: 'Confirmed', preferredDate: calDate });
+    setShowCalInvite(false); setCalDate(''); setCalTechId('');
+    showToast('Calendar invite sent & technician assigned!');
   };
 
-  const formatTime = (iso: string) => {
-    const d = new Date(iso);
-    return d.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit', hour12: true });
-  };
-
+  const formatTime = (iso: string) => new Date(iso).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit', hour12: true });
   const formatDate = (iso: string) => {
-    const d = new Date(iso);
-    const today = new Date();
-    const yesterday = new Date(); yesterday.setDate(today.getDate() - 1);
+    const d = new Date(iso); const today = new Date(); const yest = new Date(); yest.setDate(today.getDate() - 1);
     if (d.toDateString() === today.toDateString()) return 'Today';
-    if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
+    if (d.toDateString() === yest.toDateString()) return 'Yesterday';
     return d.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' });
   };
 
-  const renderMessageBubble = (msg: Message) => {
-    const isAdmin = msg.senderRole === 'admin';
-    const isOperator = msg.senderRole === 'operator';
+  const renderBubble = (msg: Message) => {
+    const isAdminOp = msg.senderRole === 'admin' || msg.senderRole === 'operator';
     const isClient = msg.senderRole === 'client';
-    const isSystem = msg.type === 'system';
-
-    if (isSystem) {
-      return (
-        <div key={msg.id} style={{ textAlign: 'center', margin: '8px 0' }}>
-          <span style={{ background: 'var(--cloud)', color: 'var(--slate)', fontSize: 12, padding: '4px 14px', borderRadius: 99, border: '1px solid var(--mist)' }}>
-            {msg.content}
-          </span>
-        </div>
-      );
-    }
-
+    if (msg.type === 'system') return (
+      <div key={msg.id} style={{ textAlign: 'center', margin: '8px 0' }}>
+        <span style={{ background: 'var(--cloud)', color: 'var(--slate)', fontSize: 12, padding: '4px 14px', borderRadius: 99, border: '1px solid var(--mist)' }}>{msg.content}</span>
+      </div>
+    );
     if (msg.type === 'calendar_invite' && msg.calendarData) {
       const inv = msg.calendarData;
       return (
-        <div key={msg.id} style={{ display: 'flex', justifyContent: isOperator || isAdmin ? 'flex-end' : 'flex-start', margin: '6px 0' }}>
-          <div style={{ background: 'white', border: '1.5px solid var(--polar)', borderRadius: 14, padding: '12px 16px', maxWidth: 320, fontSize: 13 }}>
-            <div style={{ fontWeight: 700, color: 'var(--polar)', marginBottom: 6 }}>📅 Calendar Invite</div>
-            <div style={{ color: 'var(--ink)' }}>{inv.confirmedDate} · {inv.timeSlot}</div>
-            {inv.technicianName && <div style={{ color: 'var(--slate)', fontSize: 12, marginTop: 4 }}>Tech: {inv.technicianName}</div>}
-            <div style={{ marginTop: 8 }}>
-              <Badge label={inv.accepted === true ? 'Accepted' : inv.accepted === false ? 'Declined' : 'Pending'} color={inv.accepted === true ? 'var(--verified)' : inv.accepted === false ? 'var(--alert)' : 'var(--caution)'} bg={inv.accepted === true ? '#D1FAE5' : inv.accepted === false ? '#FEE2E2' : '#FEF3C7'} />
+        <div key={msg.id} style={{ display: 'flex', justifyContent: isAdminOp ? 'flex-end' : 'flex-start', margin: '6px 0' }}>
+          <div style={{ background: 'white', border: '2px solid var(--polar)', borderRadius: 14, padding: '14px 18px', maxWidth: 340, fontSize: 13, boxShadow: '0 2px 12px rgba(10,110,143,0.1)' }}>
+            <div style={{ fontWeight: 700, color: 'var(--polar)', marginBottom: 8, fontSize: 14 }}>📅 Schedule Confirmation</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '100px 1fr', gap: '4px 12px', fontSize: 13, marginBottom: 10 }}>
+              <span style={{ color: 'var(--slate)' }}>Date</span><span style={{ fontWeight: 600 }}>{inv.confirmedDate}</span>
+              <span style={{ color: 'var(--slate)' }}>Time</span><span style={{ fontWeight: 600 }}>{inv.timeSlot}</span>
+              <span style={{ color: 'var(--slate)' }}>Technician</span><span style={{ fontWeight: 600 }}>{inv.technicianName}</span>
+              <span style={{ color: 'var(--slate)' }}>Service</span><span style={{ fontWeight: 600 }}>{inv.serviceType}</span>
             </div>
-            <div style={{ fontSize: 11, color: 'var(--slate)', marginTop: 6 }}>{msg.senderName} · {formatTime(msg.createdAt)}</div>
+            <Badge label={inv.accepted === true ? '✓ Accepted' : inv.accepted === false ? '✕ Declined' : '⏳ Awaiting response'} color={inv.accepted === true ? 'var(--verified)' : inv.accepted === false ? 'var(--alert)' : 'var(--caution)'} bg={inv.accepted === true ? '#D1FAE5' : inv.accepted === false ? '#FEE2E2' : '#FEF3C7'} />
+            <div style={{ fontSize: 11, color: 'var(--slate)', marginTop: 8 }}>{msg.senderName} · {formatTime(msg.createdAt)}</div>
           </div>
         </div>
       );
     }
-
-    const bubbleRight = isOperator || isAdmin;
-    return (
-      <div key={msg.id} style={{ display: 'flex', justifyContent: bubbleRight ? 'flex-end' : 'flex-start', margin: '4px 0' }}>
-        <div style={{
-          background: isAdmin ? 'var(--midnight)' : isOperator ? 'var(--polar)' : 'white',
-          color: isAdmin || isOperator ? 'white' : 'var(--ink)',
-          border: isClient ? '1px solid var(--mist)' : 'none',
-          borderRadius: bubbleRight ? '14px 14px 4px 14px' : '14px 14px 14px 4px',
-          padding: '10px 14px', maxWidth: 340, fontSize: 14, lineHeight: 1.5,
-        }}>
-          <div style={{ fontSize: 11, fontWeight: 600, marginBottom: 4, opacity: 0.75 }}>{msg.senderName}</div>
+    if (msg.type === 'status_update') return (
+      <div key={msg.id} style={{ display: 'flex', justifyContent: isAdminOp ? 'flex-end' : 'flex-start', margin: '4px 0' }}>
+        <div style={{ background: 'linear-gradient(135deg, var(--verified), #059669)', color: 'white', borderRadius: isAdminOp ? '14px 14px 4px 14px' : '14px 14px 14px 4px', padding: '10px 14px', maxWidth: 340, fontSize: 14 }}>
+          <div style={{ fontSize: 11, fontWeight: 600, marginBottom: 4, opacity: 0.85 }}>📍 Status Update · {msg.senderName}</div>
           <div>{msg.content}</div>
+          <div style={{ fontSize: 10, marginTop: 6, opacity: 0.7, textAlign: 'right' }}>{formatTime(msg.createdAt)}</div>
+        </div>
+      </div>
+    );
+    return (
+      <div key={msg.id} style={{ display: 'flex', justifyContent: isAdminOp ? 'flex-end' : 'flex-start', margin: '4px 0' }}>
+        <div style={{ background: msg.senderRole === 'admin' ? 'var(--midnight)' : msg.senderRole === 'operator' ? 'var(--polar)' : 'white', color: isAdminOp ? 'white' : 'var(--ink)', border: isClient ? '1px solid var(--mist)' : 'none', borderRadius: isAdminOp ? '14px 14px 4px 14px' : '14px 14px 14px 4px', padding: '10px 14px', maxWidth: 360, fontSize: 14, lineHeight: 1.5 }}>
+          <div style={{ fontSize: 11, fontWeight: 600, marginBottom: 4, opacity: 0.75 }}>{msg.senderName}</div>
+          <div style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</div>
           <div style={{ fontSize: 10, marginTop: 6, opacity: 0.6, textAlign: 'right' }}>{formatTime(msg.createdAt)}</div>
         </div>
       </div>
     );
   };
 
+  const qrCategories = ['all', 'greeting', 'availability', 'confirmation', 'dispatch', 'update', 'payment', 'completion'];
+  const filteredTemplates = QUICK_REPLY_TEMPLATES.filter(t => qrCategory === 'all' || t.category === qrCategory);
+  const availableTechs = technicians.filter(t => t.active && t.isAvailable && (!selectedJob || t.coverageCities.includes(selectedJob.city as never)));
+
   return (
     <div>
+      {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
         <div>
-          <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 24, fontWeight: 800, color: 'var(--midnight)', marginBottom: 4 }}>Messages Monitor</h2>
-          <p style={{ color: 'var(--slate)', fontSize: 14 }}>All client-operator communication</p>
+          <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 24, fontWeight: 800, color: 'var(--midnight)', marginBottom: 4 }}>Messages Hub</h2>
+          <p style={{ color: 'var(--slate)', fontSize: 14 }}>
+            All client communication — in one place.
+            {totalUnread > 0 && <span style={{ marginLeft: 8, background: 'var(--alert)', color: 'white', fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 99 }}>{totalUnread} unread</span>}
+          </p>
         </div>
         <div style={{ display: 'flex', gap: 6 }}>
-          {(['all', 'unread', 'operator'] as const).map(f => (
-            <button key={f} onClick={() => setThreadFilter(f)} style={{
-              padding: '6px 14px', borderRadius: 99, fontSize: 12, fontWeight: 600, cursor: 'pointer',
-              border: `1.5px solid ${threadFilter === f ? 'var(--polar)' : 'var(--mist)'}`,
-              background: threadFilter === f ? 'var(--polar)' : 'white',
-              color: threadFilter === f ? 'white' : 'var(--slate)', fontFamily: 'var(--font-body)',
-            }}>
-              {f === 'all' ? 'All' : f === 'unread' ? 'Unread' : 'By Operator'}
+          {(['all', 'unread', 'active'] as const).map(f => (
+            <button key={f} onClick={() => setThreadFilter(f)} style={{ padding: '6px 14px', borderRadius: 99, fontSize: 12, fontWeight: 600, cursor: 'pointer', border: `1.5px solid ${threadFilter === f ? 'var(--polar)' : 'var(--mist)'}`, background: threadFilter === f ? 'var(--polar)' : 'white', color: threadFilter === f ? 'white' : 'var(--slate)', fontFamily: 'var(--font-body)' }}>
+              {f === 'all' ? 'All Threads' : f === 'unread' ? `Unread${totalUnread > 0 ? ` (${totalUnread})` : ''}` : 'Active Jobs'}
             </button>
           ))}
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 0, background: 'white', borderRadius: 16, border: '1px solid var(--mist)', overflow: 'hidden', minHeight: 520 }}>
-        {/* Left pane — thread list */}
-        <div style={{ width: 320, flexShrink: 0, borderRight: '1px solid var(--mist)', overflowY: 'auto' }}>
+      {/* Note card nudging admin to keep comms in-platform */}
+      <div style={{ background: 'linear-gradient(135deg, #e0f2fe, #f0fdf4)', border: '1px solid #bae6fd', borderRadius: 12, padding: '12px 18px', marginBottom: 20, display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+        <span style={{ fontSize: 20, flexShrink: 0 }}>💡</span>
+        <div style={{ fontSize: 13, color: 'var(--ink)' }}>
+          <strong>Keep all communication here</strong> — instead of Messenger or text, send client updates, calendar invites, and payment reminders directly in this inbox. Clients get notifications and can reply right from their dashboard.
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', gap: 0, background: 'white', borderRadius: 16, border: '1px solid var(--mist)', overflow: 'hidden', minHeight: 600 }}>
+        {/* ── Left pane: thread list ── */}
+        <div style={{ width: 300, flexShrink: 0, borderRight: '1px solid var(--mist)', overflowY: 'auto', background: 'var(--cloud)' }}>
           {filteredThreadJobs.length === 0 ? (
-            <div style={{ padding: '32px 20px', textAlign: 'center', color: 'var(--slate)', fontSize: 14 }}>
-              No message threads yet.
-            </div>
-          ) : (
-            filteredThreadJobs.map(job => {
-              const last = lastMessageForJob(job.id);
-              const unread = unreadForJob(job.id);
-              const operator = job.operatorId ? users.find(u => u.id === job.operatorId) : null;
-              const isSelected = selectedJobId === job.id;
-              return (
-                <button key={job.id} onClick={() => setSelectedJobId(job.id)} style={{
-                  width: '100%', textAlign: 'left', padding: '14px 16px', border: 'none', cursor: 'pointer',
-                  background: isSelected ? 'var(--breeze)' : 'white',
-                  borderBottom: '1px solid var(--mist)', transition: 'background 0.15s',
-                }}
-                onMouseEnter={e => { if (!isSelected) (e.currentTarget as HTMLElement).style.background = 'var(--cloud)'; }}
-                onMouseLeave={e => { if (!isSelected) (e.currentTarget as HTMLElement).style.background = 'white'; }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
-                    <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--ink)' }}>{job.clientName}</span>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      {last && <span style={{ fontSize: 11, color: 'var(--slate)' }}>{formatDate(last.createdAt)}</span>}
-                      {unread > 0 && (
-                        <span style={{ background: 'var(--alert)', color: 'white', fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 99 }}>{unread}</span>
-                      )}
-                    </div>
+            <div style={{ padding: '32px 20px', textAlign: 'center', color: 'var(--slate)', fontSize: 14 }}>No threads match this filter.</div>
+          ) : filteredThreadJobs.map(job => {
+            const last = lastMessageForJob(job.id);
+            const unread = unreadForJob(job.id);
+            const isSelected = selectedJobId === job.id;
+            const isPending = job.status === 'Pending';
+            return (
+              <button key={job.id} onClick={() => setSelectedJobId(job.id)} style={{ width: '100%', textAlign: 'left', padding: '14px 16px', border: 'none', cursor: 'pointer', background: isSelected ? 'white' : 'transparent', borderBottom: '1px solid var(--mist)', borderLeft: isSelected ? `3px solid var(--polar)` : '3px solid transparent', transition: 'all 0.15s' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 3 }}>
+                  <span style={{ fontWeight: unread > 0 ? 800 : 700, fontSize: 14, color: 'var(--ink)' }}>{job.clientName}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                    {last && <span style={{ fontSize: 10, color: 'var(--slate)' }}>{formatDate(last.createdAt)}</span>}
+                    {unread > 0 && <span style={{ background: 'var(--alert)', color: 'white', fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 99 }}>{unread}</span>}
                   </div>
-                  <div style={{ fontSize: 12, color: 'var(--slate)', marginBottom: 4 }}>
-                    {job.serviceType} · {job.city}
-                    {operator && <span> · Op: {operator.firstName} {operator.lastName}</span>}
+                </div>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 4, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 10, background: isPending ? '#FEF3C7' : isSelected ? 'var(--breeze)' : '#E0F2FE', color: isPending ? '#92400E' : 'var(--polar)', padding: '1px 7px', borderRadius: 99, fontWeight: 700 }}>{job.status}</span>
+                  <span style={{ fontSize: 11, color: 'var(--slate)' }}>{job.city}</span>
+                  {job.requiresQuote && <span style={{ fontSize: 10, background: '#FDE8D8', color: 'var(--ember)', padding: '1px 7px', borderRadius: 99, fontWeight: 700 }}>Quote</span>}
+                </div>
+                {last ? (
+                  <div style={{ fontSize: 12, color: unread > 0 ? 'var(--ink)' : 'var(--slate)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 240 }}>
+                    {last.senderRole === 'client' ? '← ' : ''}<strong>{last.senderRole === 'client' ? 'Client' : 'ACT'}</strong>: {last.content.slice(0, 60)}{last.content.length > 60 ? '…' : ''}
                   </div>
-                  {last && (
-                    <div style={{ fontSize: 12, color: 'var(--slate)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 260 }}>
-                      <span style={{ fontWeight: 600 }}>{last.senderName}:</span> {last.content}
-                    </div>
-                  )}
-                </button>
-              );
-            })
-          )}
+                ) : (
+                  <div style={{ fontSize: 12, color: 'var(--slate)', fontStyle: 'italic' }}>No messages yet — start the conversation</div>
+                )}
+              </button>
+            );
+          })}
         </div>
 
-        {/* Right pane — chat thread */}
+        {/* ── Right pane: chat ── */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
           {!selectedJob ? (
-            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)', fontSize: 14 }}>
-              Select a thread to view messages
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--slate)', padding: 40, textAlign: 'center' }}>
+              <div style={{ fontSize: 48, marginBottom: 16 }}>💬</div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--midnight)', marginBottom: 8 }}>Select a thread</div>
+              <div style={{ fontSize: 14, maxWidth: 320, lineHeight: 1.6 }}>Choose a job conversation on the left. Use quick reply templates to replace your Messenger messages — all communication stays recorded here.</div>
             </div>
           ) : (
             <>
-              {/* Job details banner */}
-              <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--mist)', background: 'var(--cloud)', flexShrink: 0 }}>
-                <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--ink)' }}>{selectedJob.clientName}</div>
-                  <Badge label={selectedJob.status} />
-                  <span style={{ fontSize: 13, color: 'var(--slate)' }}>{selectedJob.serviceType} · {selectedJob.city} · {selectedJob.preferredDate}</span>
-                  {selectedJob.operatorName && <span style={{ fontSize: 13, color: 'var(--polar)', fontWeight: 600 }}>Op: {selectedJob.operatorName}</span>}
-                  {selectedJob.technicianName && <span style={{ fontSize: 13, color: 'var(--verified)', fontWeight: 600 }}>Tech: {selectedJob.technicianName}</span>}
+              {/* Job context banner */}
+              <div style={{ padding: '12px 18px', borderBottom: '1px solid var(--mist)', background: 'white', flexShrink: 0 }}>
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'space-between' }}>
+                  <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <div style={{ fontWeight: 800, fontSize: 15, color: 'var(--midnight)' }}>{selectedJob.clientName}</div>
+                    <Badge label={selectedJob.status} />
+                    <span style={{ fontSize: 12, color: 'var(--slate)' }}>{selectedJob.serviceType} · {selectedJob.city} · {selectedJob.preferredDate}</span>
+                    {selectedJob.technicianName && <span style={{ fontSize: 12, background: '#D1FAE5', color: '#065F46', padding: '2px 8px', borderRadius: 99, fontWeight: 700 }}>Tech: {selectedJob.technicianName}</span>}
+                    {selectedJob.requiresQuote && <span style={{ fontSize: 12, background: '#FDE8D8', color: 'var(--ember)', padding: '2px 8px', borderRadius: 99, fontWeight: 700 }}>⚡ Needs Quote</span>}
+                    {selectedJob.preferredTechnicianName && !selectedJob.technicianName && <span style={{ fontSize: 12, background: '#EDE9FE', color: '#5B21B6', padding: '2px 8px', borderRadius: 99, fontWeight: 700 }}>Prefers: {selectedJob.preferredTechnicianName}</span>}
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                    {/* Tech availability check — for pending/confirmed jobs */}
+                    {['Pending', 'Confirmed', 'Scheduled'].includes(selectedJob.status) && (
+                      <button onClick={() => { setShowTechCheck(!showTechCheck); setShowCalInvite(false); setShowQuickReplies(false); }} style={{ padding: '6px 12px', borderRadius: 8, border: `1.5px solid ${showTechCheck ? 'var(--polar)' : 'var(--mist)'}`, background: showTechCheck ? 'var(--breeze)' : 'white', cursor: 'pointer', fontSize: 12, fontWeight: 700, color: showTechCheck ? 'var(--polar)' : 'var(--ink)', fontFamily: 'var(--font-body)' }}>
+                        🔍 Check Techs
+                      </button>
+                    )}
+                    {/* Send calendar invite */}
+                    {['Pending', 'Confirmed', 'Scheduled'].includes(selectedJob.status) && (
+                      <button onClick={() => { setShowCalInvite(!showCalInvite); setShowTechCheck(false); setShowQuickReplies(false); setCalDate(selectedJob.preferredDate); setCalTime(selectedJob.timeSlot); }} style={{ padding: '6px 12px', borderRadius: 8, border: `1.5px solid ${showCalInvite ? 'var(--polar)' : 'var(--mist)'}`, background: showCalInvite ? 'var(--breeze)' : 'white', cursor: 'pointer', fontSize: 12, fontWeight: 700, color: showCalInvite ? 'var(--polar)' : 'var(--ink)', fontFamily: 'var(--font-body)' }}>
+                        📅 Calendar Invite
+                      </button>
+                    )}
+                  </div>
                 </div>
-              </div>
 
-              {/* Messages */}
-              <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 2 }}>
-                {threadMessages.length === 0 ? (
-                  <div style={{ textAlign: 'center', color: 'var(--slate)', fontSize: 14, padding: '40px 0' }}>No messages in this thread yet.</div>
-                ) : (
-                  threadMessages.map(msg => renderMessageBubble(msg))
+                {/* Tech availability check drawer */}
+                {showTechCheck && (
+                  <div style={{ marginTop: 12, padding: 14, background: 'var(--cloud)', borderRadius: 10, border: '1px solid var(--mist)' }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--midnight)', marginBottom: 10 }}>Available technicians for {selectedJob.city}</div>
+                    {availableTechs.length === 0 ? (
+                      <div style={{ fontSize: 13, color: 'var(--slate)' }}>No available techs covering {selectedJob.city}. Check individual schedules or update tech coverage.</div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {availableTechs.map(tech => (
+                          <div key={tech.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', background: 'white', borderRadius: 8, border: `1.5px solid ${selectedJob.technicianId === tech.id ? 'var(--verified)' : 'var(--mist)'}` }}>
+                            <div>
+                              <div style={{ fontWeight: 700, fontSize: 13 }}>{tech.fullName} <span style={{ fontWeight: 400, color: 'var(--slate)', fontSize: 12 }}>· {tech.skillLevel} · ⭐{tech.averageRating}</span></div>
+                              <div style={{ fontSize: 12, color: 'var(--slate)' }}>{tech.coverageCities.join(', ')}</div>
+                              {selectedJob.preferredTechnicianId === tech.id && <div style={{ fontSize: 11, color: '#7C3AED', fontWeight: 700, marginTop: 2 }}>★ Client&apos;s preferred technician</div>}
+                            </div>
+                            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                              <span style={{ fontSize: 11, color: 'var(--verified)', fontWeight: 700 }}>✓ Available</span>
+                              {selectedJob.technicianId !== tech.id && (
+                                <button onClick={() => {
+                                  updateJob(selectedJob.id, { technicianId: tech.id, technicianName: tech.fullName });
+                                  const client = users.find(u => u.id === selectedJob.clientId);
+                                  sendMessage({ jobId: selectedJob.id, senderId: ADMIN_ID, senderName: 'ACT Admin', senderRole: 'admin', type: 'text', content: `Hi ${client?.firstName || selectedJob.clientName.split(' ')[0]}! Great news — ${tech.fullName} is confirmed for your ${selectedJob.serviceType} on ${selectedJob.preferredDate} (${selectedJob.timeSlot}). I'll send the official schedule confirmation now.`, readBy: [ADMIN_ID] });
+                                  setShowTechCheck(false); showToast(`${tech.fullName} assigned!`);
+                                }} style={{ padding: '5px 12px', borderRadius: 8, background: 'var(--polar)', color: 'white', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)' }}>
+                                  Assign & Notify Client
+                                </button>
+                              )}
+                              {selectedJob.technicianId === tech.id && <span style={{ fontSize: 12, background: '#D1FAE5', color: '#065F46', padding: '3px 8px', borderRadius: 99, fontWeight: 700 }}>Assigned</span>}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Calendar invite sender drawer */}
+                {showCalInvite && (
+                  <div style={{ marginTop: 12, padding: 14, background: 'var(--cloud)', borderRadius: 10, border: '1px solid var(--mist)' }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--midnight)', marginBottom: 10 }}>Send Schedule Confirmation to Client</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 10 }}>
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--slate)', marginBottom: 4 }}>DATE</div>
+                        <input type="date" value={calDate} onChange={e => setCalDate(e.target.value)} style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1.5px solid var(--border)', fontFamily: 'var(--font-body)', fontSize: 13 }} />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--slate)', marginBottom: 4 }}>TIME SLOT</div>
+                        <select value={calTime} onChange={e => setCalTime(e.target.value as 'AM' | 'PM' | 'Flexible')} style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1.5px solid var(--border)', fontFamily: 'var(--font-body)', fontSize: 13 }}>
+                          {['AM', 'PM', 'Flexible'].map(t => <option key={t} value={t}>{t}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--slate)', marginBottom: 4 }}>TECHNICIAN</div>
+                        <select value={calTechId} onChange={e => setCalTechId(e.target.value)} style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1.5px solid var(--border)', fontFamily: 'var(--font-body)', fontSize: 13 }}>
+                          <option value="">Select tech…</option>
+                          {technicians.filter(t => t.active).map(t => <option key={t.id} value={t.id}>{t.fullName}{t.id === selectedJob.preferredTechnicianId ? ' ★ Preferred' : ''}{!t.isAvailable ? ' (Unavailable)' : ''}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button onClick={() => setShowCalInvite(false)} style={{ padding: '8px 16px', borderRadius: 8, border: '1.5px solid var(--mist)', background: 'white', cursor: 'pointer', fontSize: 13, fontFamily: 'var(--font-body)' }}>Cancel</button>
+                      <button onClick={handleSendCalInvite} disabled={!calDate || !calTechId} style={{ padding: '8px 18px', borderRadius: 8, border: 'none', background: calDate && calTechId ? 'var(--polar)' : 'var(--mist)', color: 'white', cursor: calDate && calTechId ? 'pointer' : 'not-allowed', fontSize: 13, fontWeight: 700, fontFamily: 'var(--font-body)' }}>📅 Send Invite & Confirm Booking</button>
+                    </div>
+                  </div>
                 )}
               </div>
 
-              {/* Admin reply input */}
-              <div style={{ padding: '12px 16px', borderTop: '1px solid var(--mist)', background: 'white', display: 'flex', gap: 10, flexShrink: 0 }}>
-                <input
-                  type="text"
+              {/* Messages area */}
+              <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 2, background: '#FAFCFF' }}>
+                {threadMessages.length === 0 ? (
+                  <div style={{ textAlign: 'center', color: 'var(--slate)', fontSize: 14, padding: '40px 20px' }}>
+                    <div style={{ fontSize: 32, marginBottom: 10 }}>👋</div>
+                    <div>No messages yet. Send the client a welcome message using Quick Replies below!</div>
+                  </div>
+                ) : threadMessages.map(msg => renderBubble(msg))}
+                <div ref={messagesEndRef} />
+              </div>
+
+              {/* Quick Replies drawer */}
+              {showQuickReplies && (
+                <div style={{ borderTop: '1px solid var(--mist)', background: 'white', padding: '12px 16px', maxHeight: 280, overflowY: 'auto', flexShrink: 0 }}>
+                  <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
+                    {qrCategories.map(cat => (
+                      <button key={cat} onClick={() => setQrCategory(cat)} style={{ padding: '4px 10px', borderRadius: 99, fontSize: 11, fontWeight: 600, cursor: 'pointer', border: `1.5px solid ${qrCategory === cat ? 'var(--polar)' : 'var(--mist)'}`, background: qrCategory === cat ? 'var(--polar)' : 'white', color: qrCategory === cat ? 'white' : 'var(--slate)', fontFamily: 'var(--font-body)', textTransform: 'capitalize' }}>
+                        {cat === 'all' ? 'All' : cat}
+                      </button>
+                    ))}
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8 }}>
+                    {filteredTemplates.map(tpl => (
+                      <button key={tpl.id} onClick={() => { setNewMessage(applyTemplate(tpl.template)); setShowQuickReplies(false); }} style={{ textAlign: 'left', padding: '10px 12px', borderRadius: 10, border: '1.5px solid var(--mist)', background: 'var(--cloud)', cursor: 'pointer', fontFamily: 'var(--font-body)', transition: 'all 0.15s' }}
+                        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--polar)'; (e.currentTarget as HTMLElement).style.background = 'var(--breeze)'; }}
+                        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--mist)'; (e.currentTarget as HTMLElement).style.background = 'var(--cloud)'; }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 3 }}>{tpl.emoji} {tpl.label}</div>
+                        <div style={{ fontSize: 11, color: 'var(--slate)', lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{tpl.template.replace(/{{[^}]+}}/g, '…')}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Compose bar */}
+              <div style={{ padding: '10px 14px', borderTop: showQuickReplies ? 'none' : '1px solid var(--mist)', background: 'white', display: 'flex', gap: 8, flexShrink: 0, alignItems: 'flex-end' }}>
+                <button onClick={() => { setShowQuickReplies(!showQuickReplies); setShowTechCheck(false); setShowCalInvite(false); }} title="Quick Reply Templates" style={{ padding: '9px 12px', borderRadius: 8, border: `1.5px solid ${showQuickReplies ? 'var(--polar)' : 'var(--mist)'}`, background: showQuickReplies ? 'var(--breeze)' : 'white', cursor: 'pointer', fontSize: 16, flexShrink: 0, color: showQuickReplies ? 'var(--polar)' : 'var(--ink)' }} aria-label="Quick replies">⚡</button>
+                <textarea
                   value={newMessage}
                   onChange={e => setNewMessage(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-                  placeholder="Type a message as ACT Admin…"
-                  style={{
-                    flex: 1, padding: '10px 14px', borderRadius: 10, border: '1.5px solid var(--border)',
-                    fontFamily: 'var(--font-body)', fontSize: 14, color: 'var(--ink)', background: 'white', outline: 'none',
-                  }}
+                  placeholder="Message the client… or pick a quick reply template ⚡"
+                  rows={newMessage.split('\n').length > 2 ? 3 : 1}
+                  style={{ flex: 1, padding: '10px 14px', borderRadius: 10, border: '1.5px solid var(--border)', fontFamily: 'var(--font-body)', fontSize: 14, color: 'var(--ink)', background: 'white', outline: 'none', resize: 'none', minHeight: 40 }}
                   onFocus={e => { e.target.style.borderColor = 'var(--polar)'; }}
                   onBlur={e => { e.target.style.borderColor = 'var(--border)'; }}
                 />
-                <Button variant="primary" size="sm" onClick={handleSend} disabled={!newMessage.trim()}>Send</Button>
+                <Button variant="primary" size="sm" onClick={handleSend} disabled={!newMessage.trim()} style={{ flexShrink: 0, alignSelf: 'flex-end' }}>Send</Button>
               </div>
+              {toast.visible && <div style={{ position: 'absolute', bottom: 20, right: 20, background: 'var(--midnight)', color: 'white', padding: '10px 18px', borderRadius: 10, fontSize: 13, fontWeight: 600, zIndex: 999, boxShadow: '0 4px 16px rgba(0,0,0,0.15)' }}>{toast.message}</div>}
             </>
           )}
         </div>
