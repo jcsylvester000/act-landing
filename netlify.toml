@@ -1,0 +1,17 @@
+# ACT — Netlify deployment configuration
+# Required environment variables (Site settings → Environment variables):
+#   DATABASE_URL    — Neon pooled connection string (-pooler host)
+#   DIRECT_URL      — Neon direct connection string
+#   SESSION_SECRET  — session cookie signing secret (openssl rand -hex 32)
+#   CRON_SECRET     — shared key for the scheduled chat-archive job (openssl rand -hex 32)
+
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+# Daily 7-day chat retention job → POST /api/messages/archive
+[functions."archive-chats"]
+  schedule = "0 18 * * *"   # 18:00 UTC = 2:00 AM Philippine time daily
