@@ -12,7 +12,7 @@ export async function GET(req: Request) {
         ...(status ? { status: fromApp(status) as never } : {}),
       },
       orderBy: { createdAt: 'desc' },
-      include: { assignments: { orderBy: { assignedAt: 'desc' }, take: 1, include: { technician: true } } },
+      include: { client: { select: { firstName: true, lastName: true } }, assignments: { orderBy: { assignedAt: 'desc' }, take: 1, include: { technician: true } } },
     });
     return ok(toApp(jobs));
   } catch (e) {
@@ -33,6 +33,7 @@ export async function POST(req: Request) {
     const reservationFee = Number(body.reservationFee ?? 0);
     const job = await prisma.job.create({
       data: {
+        ...(body.id ? { id: String(body.id) } : {}),
         clientId: String(body.clientId),
         serviceType: body.serviceType as never,
         acType: String(body.acType),
@@ -51,6 +52,12 @@ export async function POST(req: Request) {
         specialInstructions: body.specialInstructions ? String(body.specialInstructions) : null,
         isAdminCreated: Boolean(body.isAdminCreated ?? false),
         preferredTechnicianId: body.preferredTechnicianId ? String(body.preferredTechnicianId) : null,
+        preferredTechnicianName: body.preferredTechnicianName ? String(body.preferredTechnicianName) : null,
+        technicianId: body.technicianId ? String(body.technicianId) : null,
+        technicianName: body.technicianName ? String(body.technicianName) : null,
+        operatorId: body.operatorId ? String(body.operatorId) : null,
+        operatorName: body.operatorName ? String(body.operatorName) : null,
+        customPrice: body.customPrice !== undefined && body.customPrice !== null ? Number(body.customPrice) : null,
       },
     });
 

@@ -26,14 +26,16 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     const prev = await prisma.job.findUnique({ where: { id }, include: { client: true } });
     if (!prev) return fail('Job not found.', 404);
 
-    const data = omit(body, ['id', 'clientId', 'createdAt', 'updatedAt', 'technicianId', 'technicianName']);
+    const clientManaged = Boolean((body as { clientManaged?: unknown }).clientManaged);
+    const data = omit(body, ['id', 'clientId', 'clientName', 'createdAt', 'updatedAt', 'clientManaged', 'action', 'nextDueDate']);
     if (data.preferredDate) data.preferredDate = new Date(String(data.preferredDate));
 
     const job = await prisma.job.update({ where: { id }, data: data as never });
 
-    // ── Side effects (parity with store.updateJob) ──
-    const completing = body.status === 'Completed' && prev.status !== 'Completed';
-    const cancelling = body.status === 'Cancelled' && prev.status !== 'Cancelled';
+    // ── Side effects (parity with store.updateJob) — skipped when the app store
+    // manages them itself (dual-write mode sends clientManaged: true) ──
+    const completing = !clientManaged && body.status === 'Completed' && prev.status !== 'Completed';
+    const cancelling = !clientManaged && body.status === 'Cancelled' && prev.status !== 'Cancelled';
 
     if (completing) {
       await prisma.notification.create({

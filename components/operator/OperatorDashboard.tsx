@@ -1232,7 +1232,7 @@ const ProfilePanel: React.FC = () => {
 // ─── MAIN OPERATOR DASHBOARD ───────────────────────────────────────────────────
 const OperatorDashboard: React.FC = () => {
   const router = useRouter();
-  const { currentUser, jobs, messages, archiveExpiredChats } = useStore();
+  const { currentUser, jobs, messages, hydrate } = useStore();
   const { isMobile, isTablet } = useBreakpoint();
   const isNarrow = isMobile || isTablet;
 
@@ -1248,8 +1248,8 @@ const OperatorDashboard: React.FC = () => {
     }
   }, [currentUser, router]);
 
-  // 7-day chat retention: move expired live messages into JSON archives
-  useEffect(() => { archiveExpiredChats(); }, [archiveExpiredChats]);
+  // Hydrate from the server (system of record) + run 7-day chat retention job
+  useEffect(() => { hydrate(); }, [hydrate]);
 
   if (!currentUser || currentUser.role !== 'operator') return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--midnight)' }}>

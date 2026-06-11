@@ -1,5 +1,7 @@
+import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { ok, fail, toApp } from '@/lib/api';
+import { fail, toApp, serialize } from '@/lib/api';
+import { createSessionCookie } from '@/lib/session';
 import bcrypt from 'bcryptjs';
 
 export async function POST(req: Request) {
@@ -11,7 +13,9 @@ export async function POST(req: Request) {
     const valid = await bcrypt.compare(String(password), user.passwordHash);
     if (!valid) return fail('Invalid email or password.', 401);
     const { passwordHash: _ph, ...safe } = user;
-    return ok(toApp(safe));
+    const res = NextResponse.json({ ok: true, data: serialize(toApp(safe)) });
+    res.headers.set('Set-Cookie', createSessionCookie(user.id, user.role));
+    return res;
   } catch (e) {
     return fail(e instanceof Error ? e.message : 'Login failed.', 500);
   }

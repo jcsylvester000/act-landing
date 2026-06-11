@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { api } from '@/lib/apiClient';
 
 // ─── CORE TYPES ───────────────────────────────────────────────────────────────
 export type UserRole = 'client' | 'admin' | 'operator';
@@ -311,9 +312,10 @@ interface AppState {
   billingStatements: BillingStatement[];
 
   // Auth
-  login: (email: string, password: string) => { success: boolean; role?: UserRole; error?: string };
-  register: (data: Partial<User> & { password: string }) => { success: boolean; error?: string };
+  login: (email: string, password: string) => Promise<{ success: boolean; role?: UserRole; error?: string }>;
+  register: (data: Partial<User> & { password: string }) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
+  hydrate: () => Promise<void>;
 
   // Jobs
   addJob: (job: Omit<Job, 'id' | 'createdAt'>) => Job;
@@ -562,50 +564,78 @@ export const useStore = create<AppState>()(
   persist(
     (set, get) => ({
       currentUser: null,
-      users: seedUsers,
-      jobs: seedJobs,
-      technicians: seedTechnicians,
+      users: [],
+      jobs: [],
+      technicians: [],
       notifications: [],
-      messages: seedMessages,
+      messages: [],
       chatArchives: [],
       invoices: [],
-      serviceInvoices: seedServiceInvoices,
-      billingStatements: seedBillingStatements,
+      serviceInvoices: [],
+      billingStatements: [],
 
       // ── AUTH ──────────────────────────────────────────────────────────────
-      login: (email, password) => {
-        const { users } = get();
-        const e = email.trim().toLowerCase();
-        const p = password.trim();
-        const adminEmails = ['admin@act.ph', 'admin@test.com', 'admin@admin.com', 'admin'];
-        if (adminEmails.includes(e) && p === 'admin') {
-          const u = users.find(u => u.role === 'admin');
-          if (u) { set({ currentUser: u }); return { success: true, role: 'admin' as const }; }
-        }
-        const op = users.find(u => u.role === 'operator' && u.email.toLowerCase() === e);
-        if (op && p === 'operator') { set({ currentUser: op }); return { success: true, role: 'operator' as const }; }
-        const ex = users.find(u => u.email.toLowerCase() === e);
-        if (ex) { set({ currentUser: ex }); return { success: true, role: ex.role }; }
-        const nu: User = { id: 'CLIENT' + generateId(), email: e, firstName: e.split('@')[0], lastName: 'User', phone: '09170000000', role: 'client', clientType: 'Residential', acUnits: 1, followUpStatus: 'On track', createdAt: new Date().toISOString() };
-        set(s => ({ users: [...s.users, nu], currentUser: nu }));
-        return { success: true, role: 'client' as const };
+      login: async (email, password) => {
+        const res = await api.login(email.trim().toLowerCase(), password.trim());
+        if (!res.ok || !res.data) return { success: false, error: res.error || 'Invalid email or password.' };
+        const u = res.data;
+        set({ currentUser: u });
+        void get().hydrate();
+        return { success: true, role: u.role };
       },
 
-      register: (data) => {
-        const { users } = get();
-        if (users.find(u => u.email === data.email)) return { success: false, error: 'Email already registered.' };
-        const nu: User = { id: 'CLIENT' + generateId(), email: data.email!, firstName: data.firstName!, lastName: data.lastName!, phone: data.phone!, role: 'client', address: data.address, city: data.city as CoverageCity, clientType: 'Residential', acUnits: 1, followUpStatus: 'On track', createdAt: new Date().toISOString() };
-        set(s => ({ users: [...s.users, nu], currentUser: nu }));
+      register: async (data) => {
+        const res = await api.register(data as Record<string, unknown>);
+        if (!res.ok || !res.data) return { success: false, error: res.error || 'Registration failed.' };
+        const u = res.data;
+        set(s => ({ users: [...s.users, u], currentUser: u }));
+        void get().hydrate();
         return { success: true };
       },
 
-      logout: () => set({ currentUser: null }),
+      logout: () => { api.logout(); set({ currentUser: null }); },
+
+      // ── HYDRATION (server is the system of record) ────────────────────────
+      hydrate: async () => {
+        const me = get().currentUser;
+        if (!me) return;
+        const isStaff = me.role === 'admin' || me.role === 'operator';
+        try {
+          const [techs, jobs, invoices, messages, notifications, archives, users] = await Promise.all([
+            api.getTechnicians(),
+            api.getJobs(isStaff ? undefined : me.id),
+            api.getInvoices(isStaff ? undefined : me.id),
+            api.getMessages(),
+            api.getNotifications(me.id),
+            api.getArchives(me.role === 'client' ? me.id : undefined, me.role === 'operator' ? me.id : undefined),
+            isStaff ? api.getClients() : Promise.resolve(null),
+          ]);
+          const jobIds = new Set((jobs ?? get().jobs).map(j => j.id));
+          set(s => ({
+            technicians: techs ?? s.technicians,
+            jobs: jobs ?? s.jobs,
+            serviceInvoices: invoices ? invoices.serviceInvoices : s.serviceInvoices,
+            billingStatements: invoices ? invoices.billingStatements : s.billingStatements,
+            messages: messages ? (isStaff ? messages : messages.filter(m => jobIds.has(m.jobId))) : s.messages,
+            notifications: notifications ?? s.notifications,
+            chatArchives: archives ?? s.chatArchives,
+            users: users ?? s.users,
+          }));
+        } catch { /* offline — keep local cache */ }
+        // 7-day retention job runs server-side; refresh archives after
+        void api.runArchiveJob().then(async ran => {
+          if (!ran) return;
+          const a = await api.getArchives(me.role === 'client' ? me.id : undefined, me.role === 'operator' ? me.id : undefined);
+          if (a) set({ chatArchives: a });
+        });
+      },
 
       // ── JOBS ──────────────────────────────────────────────────────────────
-      addJob: (j) => { const job: Job = { ...j, id: 'JOB' + generateId(), createdAt: new Date().toISOString() }; set(s => ({ jobs: [job, ...s.jobs] })); return job; },
+      addJob: (j) => { const job: Job = { ...j, id: 'JOB' + generateId(), createdAt: new Date().toISOString() }; set(s => ({ jobs: [job, ...s.jobs] })); api.createJob(job); return job; },
       updateJob: (id, u) => {
         const prevJob = get().jobs.find(j => j.id === id);
         set(s => ({ jobs: s.jobs.map(j => j.id === id ? { ...j, ...u } : j) }));
+        api.updateJob(id, u);
         if (!prevJob) return;
         if (u.status === 'Completed' && prevJob.status !== 'Completed') {
           get().addNotification({ userId: prevJob.clientId, jobId: id, message: `Your ${prevJob.serviceType} service is complete! Please rate your experience — it takes just 5 seconds. ⭐`, type: 'success', read: false });
@@ -636,17 +666,17 @@ export const useStore = create<AppState>()(
       getJobsByClient: (cid) => get().jobs.filter(j => j.clientId === cid),
 
       // ── TECHNICIANS ───────────────────────────────────────────────────────
-      addTechnician: (t) => { const tech: Technician = { ...t, id: 'TECH' + generateId(), createdAt: new Date().toISOString() }; set(s => ({ technicians: [...s.technicians, tech] })); },
-      updateTechnician: (id, u) => set(s => ({ technicians: s.technicians.map(t => t.id === id ? { ...t, ...u } : t) })),
+      addTechnician: (t) => { const tech: Technician = { ...t, id: 'TECH' + generateId(), createdAt: new Date().toISOString() }; set(s => ({ technicians: [...s.technicians, tech] })); api.createTechnician(tech); },
+      updateTechnician: (id, u) => { api.updateTechnician(id, u); set(s => ({ technicians: s.technicians.map(t => t.id === id ? { ...t, ...u } : t) })); },
 
       // ── NOTIFICATIONS ─────────────────────────────────────────────────────
-      addNotification: (n) => { const notif: _N = { ...n, id: generateId(), createdAt: new Date().toISOString() }; set(s => ({ notifications: [notif, ...s.notifications] })); },
-      markNotificationRead: (id) => set(s => ({ notifications: s.notifications.map(n => n.id === id ? { ...n, read: true } : n) })),
+      addNotification: (n) => { const notif: _N = { ...n, id: generateId(), createdAt: new Date().toISOString() }; set(s => ({ notifications: [notif, ...s.notifications] })); api.createNotification(notif); },
+      markNotificationRead: (id) => { api.markNotificationsRead([id]); set(s => ({ notifications: s.notifications.map(n => n.id === id ? { ...n, read: true } : n) })); },
 
       // ── MESSAGES ──────────────────────────────────────────────────────────
-      sendMessage: (m) => { const msg: Message = { ...m, id: 'MSG' + generateId(), createdAt: new Date().toISOString() }; set(s => ({ messages: [...s.messages, msg] })); return msg; },
-      markMessagesRead: (jid, uid) => set(s => ({ messages: s.messages.map(m => m.jobId === jid && !m.readBy.includes(uid) ? { ...m, readBy: [...m.readBy, uid] } : m) })),
-      respondToCalendarInvite: (mid, accepted, uid) => set(s => ({ messages: s.messages.map(m => m.id === mid && m.calendarData ? { ...m, calendarData: { ...m.calendarData, accepted }, readBy: [...new Set([...m.readBy, uid])] } : m) })),
+      sendMessage: (m) => { const msg: Message = { ...m, id: 'MSG' + generateId(), createdAt: new Date().toISOString() }; set(s => ({ messages: [...s.messages, msg] })); api.sendMessage(msg); return msg; },
+      markMessagesRead: (jid, uid) => { api.markThreadRead(jid, uid); set(s => ({ messages: s.messages.map(m => m.jobId === jid && !m.readBy.includes(uid) ? { ...m, readBy: [...m.readBy, uid] } : m) })); },
+      respondToCalendarInvite: (mid, accepted, uid) => { api.calendarResponse(mid, accepted, uid); set(s => ({ messages: s.messages.map(m => m.id === mid && m.calendarData ? { ...m, calendarData: { ...m.calendarData, accepted }, readBy: [...new Set([...m.readBy, uid])] } : m) })); },
       archiveExpiredChats: () => {
         const cutoff = Date.now() - CHAT_RETENTION_DAYS * 24 * 60 * 60 * 1000;
         const { messages, jobs } = get();
@@ -676,9 +706,9 @@ export const useStore = create<AppState>()(
       },
 
       // ── OPERATORS / USERS ──────────────────────────────────────────────────
-      addOperator: (op) => { const o: User = { ...op, id: 'OP' + generateId(), role: 'operator', operatorStatus: 'Active', createdAt: new Date().toISOString() }; set(s => ({ users: [...s.users, o] })); },
-      updateOperator: (id, u) => set(s => ({ users: s.users.map(x => x.id === id ? { ...x, ...u } : x) })),
-      updateUser: (id, u) => set(s => ({ users: s.users.map(x => x.id === id ? { ...x, ...u } : x) })),
+      addOperator: (op) => { const o: User = { ...op, id: 'OP' + generateId(), role: 'operator', operatorStatus: 'Active', createdAt: new Date().toISOString() }; set(s => ({ users: [...s.users, o] })); void api.register({ ...o, role: 'operator', password: 'operator' + generateId().slice(0, 6) }).then(() => api.updateClient(o.id, { operatorStatus: o.operatorStatus, assignedCities: o.assignedCities })); },
+      updateOperator: (id, u) => { api.updateClient(id, u); set(s => ({ users: s.users.map(x => x.id === id ? { ...x, ...u } : x) })); },
+      updateUser: (id, u) => { api.updateClient(id, u); set(s => ({ users: s.users.map(x => x.id === id ? { ...x, ...u } : x) })); },
       addUserAsAdmin: (data) => {
         const nu: User = {
           id: 'CLIENT' + generateId(),
@@ -698,6 +728,7 @@ export const useStore = create<AppState>()(
           createdAt: new Date().toISOString(),
         };
         set(s => ({ users: [...s.users, nu] }));
+        void api.register({ ...nu, password: 'client' + generateId().slice(0, 8) });
         return nu;
       },
 
@@ -709,15 +740,17 @@ export const useStore = create<AppState>()(
       createServiceInvoice: (inv) => {
         const si: ServiceInvoice = { ...inv, id: 'SINV-' + inv.jobId + '-' + generateId().slice(0, 4), createdAt: new Date().toISOString() };
         set(s => ({ serviceInvoices: [si, ...s.serviceInvoices] }));
+        api.createInvoice('service_invoice', si);
         return si;
       },
-      updateServiceInvoice: (id, u) => set(s => ({ serviceInvoices: s.serviceInvoices.map(i => i.id === id ? { ...i, ...u } : i) })),
+      updateServiceInvoice: (id, u) => { set(s => ({ serviceInvoices: s.serviceInvoices.map(i => i.id === id ? { ...i, ...u } : i) })); api.pushServiceInvoice(get().serviceInvoices.find(i => i.id === id)); },
       sendServiceInvoice: (id) => {
         const now = new Date().toISOString();
         const existing = get().serviceInvoices.find(i => i.id === id);
         const isRevision = existing?.status === 'Revision Requested';
         set(s => ({ serviceInvoices: s.serviceInvoices.map(i => i.id === id ? { ...i, status: 'Sent' as InvoiceStatus, sentAt: now, viewedAt: undefined, respondedAt: undefined, clientNote: undefined, revisionCount: isRevision ? (i.revisionCount || 0) + 1 : (i.revisionCount || 0), revisedAt: isRevision ? now : i.revisedAt } : i) }));
         const inv = get().serviceInvoices.find(i => i.id === id);
+        api.pushServiceInvoice(inv);
         if (inv) {
           const msg = isRevision
             ? `Revised invoice ${inv.id} (Rev. ${inv.revisionCount}) for ₱${inv.totalAmount.toLocaleString()} is ready. Please review the updated quote.`
@@ -730,6 +763,7 @@ export const useStore = create<AppState>()(
         const statusMap = { accept: 'Accepted' as InvoiceStatus, revision: 'Revision Requested' as InvoiceStatus, cancel: 'Cancelled by Client' as InvoiceStatus };
         set(s => ({ serviceInvoices: s.serviceInvoices.map(i => i.id === id ? { ...i, status: statusMap[action], clientNote: note, respondedAt: now } : i) }));
         const inv = get().serviceInvoices.find(i => i.id === id);
+        api.pushServiceInvoice(inv);
         if (inv) {
           if (action === 'cancel') {
             get().updateJob(inv.jobId, { status: 'Cancelled', cancellationReason: note || 'Client cancelled after reviewing invoice.' });
@@ -750,24 +784,28 @@ export const useStore = create<AppState>()(
       createBillingStatement: (bill) => {
         const bs: BillingStatement = { ...bill, id: 'BILL-' + bill.jobId + '-' + generateId().slice(0, 4), createdAt: new Date().toISOString() };
         set(s => ({ billingStatements: [bs, ...s.billingStatements] }));
+        api.createInvoice('billing_statement', bs);
         return bs;
       },
-      updateBillingStatement: (id, u) => set(s => ({ billingStatements: s.billingStatements.map(b => b.id === id ? { ...b, ...u } : b) })),
+      updateBillingStatement: (id, u) => { set(s => ({ billingStatements: s.billingStatements.map(b => b.id === id ? { ...b, ...u } : b) })); api.pushBillingStatement(get().billingStatements.find(b => b.id === id)); },
       submitBillingToAdmin: (id) => {
         const now = new Date().toISOString();
         set(s => ({ billingStatements: s.billingStatements.map(b => b.id === id ? { ...b, status: 'Submitted to Admin' as BillingStatus, submittedAt: now } : b) }));
+        api.pushBillingStatement(get().billingStatements.find(b => b.id === id));
         get().addNotification({ userId: 'ADMIN001', message: `Billing statement ${id} submitted for review.`, type: 'info', read: false });
       },
       adminReviewBilling: (id, approved, adminNotes) => {
         const now = new Date().toISOString();
         const newStatus: BillingStatus = approved ? 'Admin Approved' : 'Admin Rejected';
         set(s => ({ billingStatements: s.billingStatements.map(b => b.id === id ? { ...b, status: newStatus, adminNotes, adminReviewedAt: now } : b) }));
+        api.pushBillingStatement(get().billingStatements.find(b => b.id === id));
         const bill = get().billingStatements.find(b => b.id === id);
         if (bill) get().addNotification({ userId: bill.operatorId, jobId: bill.jobId, message: approved ? `Your billing statement ${id} was approved by admin.` : `Your billing statement ${id} was returned for revision. Notes: "${adminNotes}"`, type: approved ? 'success' : 'warning', read: false });
       },
       sendBillingToClient: (id) => {
         const now = new Date().toISOString();
         set(s => ({ billingStatements: s.billingStatements.map(b => b.id === id ? { ...b, status: 'Sent to Client' as BillingStatus, sentToClientAt: now } : b) }));
+        api.pushBillingStatement(get().billingStatements.find(b => b.id === id));
         const bill = get().billingStatements.find(b => b.id === id);
         if (bill) get().addNotification({ userId: bill.clientId, jobId: bill.jobId, message: `Your billing statement ${bill.id} for ₱${bill.amountDue.toLocaleString()} is ready. ${bill.amountDue > 0 ? 'Balance due.' : 'Fully paid!'}`, type: bill.amountDue > 0 ? 'info' : 'success', read: false });
       },
@@ -778,6 +816,7 @@ export const useStore = create<AppState>()(
         const amountPaidAtClose = bill.amountDue;
         const receiptNumber = bill.receiptNumber || ('OR-' + new Date().getFullYear() + '-' + String(Date.now()).slice(-6));
         set(s => ({ billingStatements: s.billingStatements.map(b => b.id === id ? { ...b, status: 'Paid' as BillingStatus, paidAt: now, paymentMethod, paymentReference, receiptNumber, amountDue: 0, amountPaidAtClose } : b) }));
+        api.pushBillingStatement(get().billingStatements.find(b => b.id === id));
         get().updateJob(bill.jobId, { paymentStatus: 'Fully paid', balanceDue: 0 });
         get().addNotification({ userId: bill.operatorId, jobId: bill.jobId, message: `Billing ${id} for job ${bill.jobId} marked as paid (${paymentMethod}).`, type: 'success', read: false });
         get().addNotification({ userId: bill.clientId, jobId: bill.jobId, message: `Payment received! Official Receipt ${receiptNumber} issued. Your service is now fully settled. Thank you for choosing ACT! 🙏`, type: 'success', read: false });
@@ -785,6 +824,7 @@ export const useStore = create<AppState>()(
       },
       markBillingOverdue: (id) => {
         set(s => ({ billingStatements: s.billingStatements.map(b => b.id === id ? { ...b, status: 'Overdue' as BillingStatus } : b) }));
+        api.pushBillingStatement(get().billingStatements.find(b => b.id === id));
         const bill = get().billingStatements.find(b => b.id === id);
         if (bill) {
           get().addNotification({ userId: bill.clientId, jobId: bill.jobId, message: `⚠️ Your payment for job ${bill.jobId} (₱${bill.amountDue.toLocaleString()}) is now overdue. Please settle at your earliest convenience.`, type: 'warning', read: false });

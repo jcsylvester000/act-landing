@@ -24,6 +24,7 @@ export async function POST(req: Request) {
     if (!userId || !message) return fail('userId and message are required.');
     const notification = await prisma.notification.create({
       data: {
+        ...(body.id ? { id: String(body.id) } : {}),
         userId: String(userId),
         jobId: body.jobId ? String(body.jobId) : null,
         message: String(message),

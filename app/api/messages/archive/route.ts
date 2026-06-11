@@ -11,8 +11,8 @@ import { ok, fail } from '@/lib/api';
 const RETENTION_DAYS = 7;
 
 type ArchivedMessage = {
-  id: string; senderId: string; senderRole: string;
-  content: string; kind: string; createdAt: string;
+  id: string; senderId: string; senderRole: string; senderName?: string;
+  content: string; type: string; createdAt: string;
 };
 
 export async function POST() {
@@ -35,7 +35,8 @@ export async function POST() {
       const job = await prisma.job.findUnique({ where: { id: jobId }, include: { client: true } });
       const slim: ArchivedMessage[] = msgs.map(m => ({
         id: m.id, senderId: m.senderId, senderRole: m.senderRole,
-        content: m.body, kind: m.kind, createdAt: m.createdAt.toISOString(),
+        senderName: (m.meta as { senderName?: string } | null)?.senderName,
+        content: m.body, type: m.kind, createdAt: m.createdAt.toISOString(),
       }));
       const existing = await prisma.chatArchive.findUnique({ where: { jobId } });
       if (existing) {

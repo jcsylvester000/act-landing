@@ -97,8 +97,7 @@ export const LoginPage: React.FC = () => {
     e.preventDefault();
     if (!email || !password) { showToast('Please enter your email and password.', 'error'); return; }
     setLoading(true);
-    await new Promise(r => setTimeout(r, 600));
-    const result = login(email, password);
+    const result = await login(email, password);
     setLoading(false);
     if (result.success) {
       const currentUser = useStore.getState().currentUser;
@@ -114,7 +113,7 @@ export const LoginPage: React.FC = () => {
         }
       }, 500);
     } else {
-      showToast('Invalid credentials. Try any email/password for client, or admin@test.com / admin for admin.', 'error');
+      showToast(result.error || 'Invalid email or password.', 'error');
     }
   };
 
@@ -147,26 +146,21 @@ export const LoginPage: React.FC = () => {
           }}>
             <span style={{ fontSize: 18, flexShrink: 0, marginTop: 1 }}>💡</span>
             <div style={{ fontSize: 13, color: 'var(--slate)', lineHeight: 1.55 }}>
-              <strong style={{ color: 'var(--polar)', display: 'block', marginBottom: 8 }}>Demo Login Credentials</strong>
+              <strong style={{ color: 'var(--polar)', display: 'block', marginBottom: 8 }}>Staff Access (dev build)</strong>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
                 <div>
                   <span style={{ fontWeight: 600, color: 'var(--ink)' }}>Admin: </span>
-                  <span style={{ fontFamily: 'var(--font-mono)', background: 'var(--breeze)', padding: '1px 6px', borderRadius: 4, fontSize: 12 }}>admin@test.com</span>
-                  {' / '}<span style={{ fontFamily: 'var(--font-mono)', background: 'var(--breeze)', padding: '1px 6px', borderRadius: 4, fontSize: 12 }}>admin</span>
+                  <span style={{ fontFamily: 'var(--font-mono)', background: 'var(--breeze)', padding: '1px 6px', borderRadius: 4, fontSize: 12 }}>admin@act.ph</span>
+                  {' / '}<span style={{ fontFamily: 'var(--font-mono)', background: 'var(--breeze)', padding: '1px 6px', borderRadius: 4, fontSize: 12 }}>admin123</span>
                 </div>
                 <div>
-                  <span style={{ fontWeight: 600, color: 'var(--ink)' }}>Operator 1: </span>
+                  <span style={{ fontWeight: 600, color: 'var(--ink)' }}>Operator: </span>
                   <span style={{ fontFamily: 'var(--font-mono)', background: 'var(--breeze)', padding: '1px 6px', borderRadius: 4, fontSize: 12 }}>maria@act.ph</span>
-                  {' / '}<span style={{ fontFamily: 'var(--font-mono)', background: 'var(--breeze)', padding: '1px 6px', borderRadius: 4, fontSize: 12 }}>operator</span>
+                  {' / '}<span style={{ fontFamily: 'var(--font-mono)', background: 'var(--breeze)', padding: '1px 6px', borderRadius: 4, fontSize: 12 }}>operator123</span>
                 </div>
                 <div>
-                  <span style={{ fontWeight: 600, color: 'var(--ink)' }}>Operator 2: </span>
-                  <span style={{ fontFamily: 'var(--font-mono)', background: 'var(--breeze)', padding: '1px 6px', borderRadius: 4, fontSize: 12 }}>danny@act.ph</span>
-                  {' / '}<span style={{ fontFamily: 'var(--font-mono)', background: 'var(--breeze)', padding: '1px 6px', borderRadius: 4, fontSize: 12 }}>operator</span>
-                </div>
-                <div>
-                  <span style={{ fontWeight: 600, color: 'var(--ink)' }}>Client: </span>
-                  <span style={{ fontSize: 12, color: 'var(--slate)' }}>any email + any password</span>
+                  <span style={{ fontWeight: 600, color: 'var(--ink)' }}>Clients: </span>
+                  <span style={{ fontSize: 12, color: 'var(--slate)' }}>create an account — it saves to the live database</span>
                 </div>
               </div>
             </div>
@@ -250,11 +244,11 @@ export const RegisterPage: React.FC = () => {
     e.preventDefault();
     if (!validate()) return;
     setLoading(true);
-    await new Promise(r => setTimeout(r, 800));
-    register({ email: form.email, password: form.password, firstName: form.firstName, lastName: form.lastName, phone: form.phone });
+    const result = await register({ email: form.email, password: form.password, firstName: form.firstName, lastName: form.lastName, phone: form.phone });
+    setLoading(false);
+    if (!result.success) { showToast(result.error || 'Registration failed.', 'error'); return; }
     showToast('Account created! Redirecting…', 'success');
     setTimeout(() => router.push(redirectTo || '/dashboard'), 1000);
-    setLoading(false);
   };
 
   return (

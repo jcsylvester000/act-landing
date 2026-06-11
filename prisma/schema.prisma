@@ -253,6 +253,12 @@ model Job {
   cancelReason           String?
   isAdminCreated         Boolean       @default(false)
   preferredTechnicianId  String?
+  preferredTechnicianName String?
+  technicianId           String?
+  technicianName         String?
+  operatorId             String?
+  operatorName           String?
+  review                 String?
   rating                 Int?
   createdAt              DateTime      @default(now())
   updatedAt              DateTime      @updatedAt
@@ -392,7 +398,9 @@ model Invoice {
   job                Job            @relation(fields: [jobId], references: [id])
   kind               String         // "service_invoice" (pre-service quote) | "billing_statement" (post-service)
   clientId           String
+  clientName         String?
   operatorId         String?
+  operatorName       String?
   technicianName     String?
   lineItems          Json           // [{ id, description, category, quantity, unitPrice, amount }]
   subtotal           Decimal        @db.Decimal(10, 2)
@@ -411,6 +419,9 @@ model Invoice {
   workNotes          String?
   adminNotes         String?
   internalNotes      String?
+  clientResponseNote String?
+  respondedAt        DateTime?
+  submittedAt        DateTime?
   dueDate            DateTime?      @db.Date
   sentAt             DateTime?
   sentToClientAt     DateTime?

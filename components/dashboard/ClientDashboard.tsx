@@ -11,7 +11,7 @@ import ChatHistorySection from '@/components/chat/ChatHistory';
 
 const ClientDashboard: React.FC = () => {
   const router = useRouter();
-  const { currentUser, jobs, updateJob, updateUser, addNotification, messages, sendMessage, markMessagesRead, respondToCalendarInvite, serviceInvoices, billingStatements, respondToServiceInvoice, archiveExpiredChats } = useStore();
+  const { currentUser, jobs, updateJob, updateUser, addNotification, messages, sendMessage, markMessagesRead, respondToCalendarInvite, serviceInvoices, billingStatements, respondToServiceInvoice, hydrate } = useStore();
 
   // ─── ALL STATE (hooks first) ──────────────────────────────────────────────
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
@@ -39,8 +39,8 @@ const ClientDashboard: React.FC = () => {
     }
   }, [currentUser, router]);
 
-  // 7-day chat retention: move expired live messages into JSON archives
-  useEffect(() => { archiveExpiredChats(); }, [archiveExpiredChats]);
+  // Hydrate from the server (system of record) + run 7-day chat retention job
+  useEffect(() => { hydrate(); }, [hydrate]);
 
   // Deep-link: /dashboard#chat-history scrolls to the chat history section
   useEffect(() => {

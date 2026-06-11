@@ -1,5 +1,7 @@
+import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { ok, fail, fromApp, toApp } from '@/lib/api';
+import { fail, fromApp, toApp, serialize } from '@/lib/api';
+import { createSessionCookie, readSession } from '@/lib/session';
 import bcrypt from 'bcryptjs';
 
 export async function POST(req: Request) {
@@ -15,10 +17,11 @@ export async function POST(req: Request) {
 
     const user = await prisma.client.create({
       data: {
+        ...(body.id ? { id: String(body.id) } : {}),
         firstName, lastName, phone,
         email: String(email).trim().toLowerCase(),
         passwordHash: await bcrypt.hash(String(password), 10),
-        role: 'client',
+        role: body.role && readSession(req)?.role === 'admin' ? (body.role as never) : 'client',
         address: address || null,
         city: city || null,
         clientType: clientType || null,
@@ -26,7 +29,9 @@ export async function POST(req: Request) {
       },
     });
     const { passwordHash: _ph, ...safe } = user;
-    return ok(toApp(safe), 201);
+    const res = NextResponse.json({ ok: true, data: serialize(toApp(safe)) }, { status: 201 });
+    res.headers.set('Set-Cookie', createSessionCookie(user.id, user.role));
+    return res;
   } catch (e) {
     return fail(e instanceof Error ? e.message : 'Registration failed.', 500);
   }

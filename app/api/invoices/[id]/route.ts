@@ -35,7 +35,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     // ── generic field update ──
     const data = omit(body, ['id', 'jobId', 'clientId', 'kind', 'createdAt', 'updatedAt', 'action']);
     if (data.dueDate) data.dueDate = new Date(String(data.dueDate));
-    for (const k of ['sentAt', 'sentToClientAt', 'adminReviewedAt', 'revisedAt', 'paidAt']) {
+    for (const k of ['sentAt', 'sentToClientAt', 'adminReviewedAt', 'revisedAt', 'paidAt', 'respondedAt', 'submittedAt']) {
       if (data[k]) data[k] = new Date(String(data[k]));
     }
     const updated = await prisma.invoice.update({ where: { id }, data: data as never });

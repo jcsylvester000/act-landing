@@ -17,6 +17,7 @@ export async function POST(req: Request) {
     if (!fullName || !phone) return fail('fullName and phone are required.');
     const tech = await prisma.technician.create({
       data: {
+        ...(body.id ? { id: String(body.id) } : {}),
         fullName, phone,
         type: type || 'Outsource',
         skillLevel: skillLevel || 'Junior',

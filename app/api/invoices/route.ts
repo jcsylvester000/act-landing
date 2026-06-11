@@ -36,7 +36,10 @@ export async function POST(req: Request) {
     const resFee = Number(body.reservationFeePaid ?? 0);
     const invoice = await prisma.invoice.create({
       data: {
+        ...(body.id ? { id: String(body.id) } : {}),
         jobId: String(jobId), kind: String(kind), clientId: String(clientId),
+        clientName: body.clientName ? String(body.clientName) : null,
+        operatorName: body.operatorName ? String(body.operatorName) : null,
         operatorId: body.operatorId ? String(body.operatorId) : null,
         technicianName: body.technicianName ? String(body.technicianName) : null,
         lineItems: lineItems as never,
@@ -48,6 +51,9 @@ export async function POST(req: Request) {
         billingStatus: kind === 'billing_statement' ? ((body.billingStatus as never) ?? 'Draft') : null,
         notes: body.notes ? String(body.notes) : null,
         workNotes: body.workNotes ? String(body.workNotes) : null,
+        adminNotes: body.adminNotes ? String(body.adminNotes) : null,
+        internalNotes: body.internalNotes ? String(body.internalNotes) : null,
+        revisionCount: body.revisionCount !== undefined ? Number(body.revisionCount) : 0,
         dueDate: body.dueDate ? new Date(String(body.dueDate)) : null,
       },
     });

@@ -1784,7 +1784,7 @@ const AccountingPanel: React.FC = () => {
 // ─── MAIN ADMIN DASHBOARD ─────────────────────────────────────────────────────
 const AdminDashboard: React.FC = () => {
   const router = useRouter();
-  const { currentUser, jobs, technicians, archiveExpiredChats } = useStore();
+  const { currentUser, jobs, technicians, hydrate } = useStore();
   const { isMobile, isTablet } = useBreakpoint();
   const isNarrow = isMobile || isTablet;
   const [activePanel, setActivePanel] = useState('dashboard');
@@ -1799,8 +1799,8 @@ const AdminDashboard: React.FC = () => {
     }
   }, [currentUser, router]);
 
-  // 7-day chat retention: move expired live messages into JSON archives
-  useEffect(() => { archiveExpiredChats(); }, [archiveExpiredChats]);
+  // Hydrate from the server (system of record) + run 7-day chat retention job
+  useEffect(() => { hydrate(); }, [hydrate]);
 
   if (!currentUser || currentUser.role !== 'admin') return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--midnight)' }}>
