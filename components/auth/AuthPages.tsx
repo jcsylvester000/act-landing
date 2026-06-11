@@ -44,7 +44,7 @@ const AuthPanel: React.FC = () => (
         Cool, clean,<br />certain.
       </h2>
       <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: 16, lineHeight: 1.75, marginBottom: 44, maxWidth: 320 }}>
-        Metro Manila&apos;s reliability-first aircon service. Accredited technicians, transparent pricing, guaranteed work.
+        The reliability-first aircon service for South Metro Manila &amp; South Laguna. Accredited technicians, transparent pricing, guaranteed work.
       </p>
 
       {[
@@ -276,7 +276,7 @@ export const RegisterPage: React.FC = () => {
               Create your ACT account
             </h1>
             <p style={{ color: 'var(--slate)', fontSize: 15, lineHeight: 1.6 }}>
-              Join thousands of Metro Manila homeowners and businesses who trust ACT.
+              Join the homeowners and businesses across South Metro Manila &amp; South Laguna who trust ACT.
             </p>
           </div>
 

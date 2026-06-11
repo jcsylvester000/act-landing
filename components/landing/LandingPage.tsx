@@ -304,7 +304,7 @@ const LandingPage: React.FC = () => {
             </div>
 
             <h1 className="anim-fade-up d-100" style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(36px, 6vw, 68px)', fontWeight: 800, lineHeight: 1.05, marginBottom: 24, letterSpacing: '-2px' }}>
-              <span style={{ color: 'white' }}>Metro Manila&apos;s</span><br />
+              <span style={{ color: 'white' }}>South Manila&apos;s</span><br />
               <span className="gradient-text-hero">Vetted Aircon</span><br />
               <span style={{ color: 'white' }}>Service</span><span style={{ color: 'var(--ember)' }}>.</span>
             </h1>
@@ -352,7 +352,7 @@ const LandingPage: React.FC = () => {
             {[
               { icon: '🏅', label: 'ACT Accredited', sub: 'TESDA-certified, background-verified' },
               { icon: '₱', label: 'Fixed Transparent Pricing', sub: 'Every peso declared upfront' },
-              { icon: '📍', label: '6 Metro Manila Cities', sub: 'Quezon City, Makati & more' },
+              { icon: '📍', label: '7 Cities Covered', sub: 'South Metro Manila & South Laguna' },
               { icon: '🛡️', label: 'Service Guarantee', sub: 'We fix it or return — free' },
             ].map((item, i) => (
               <div key={i} className="trust-bar-item" style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '22px 28px', borderRight: i < 3 ? '1px solid var(--border)' : 'none', transition: 'background 0.2s' }}
@@ -438,7 +438,7 @@ const LandingPage: React.FC = () => {
           <div className="stats-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 40 }}>
             <StatCounter value="4.9★" label="Client Rating" sub="Based on 300+ verified reviews" delay={0} />
             <StatCounter value="500+" label="Jobs Done" sub="Growing every week" delay={100} />
-            <StatCounter value="6" label="Cities Covered" sub="Across Metro Manila" delay={200} />
+            <StatCounter value="7" label="Cities Covered" sub="South Metro Manila & Laguna" delay={200} />
             <StatCounter value="100%" label="Accredited" sub="Every technician certified" delay={300} />
           </div>
         </div>
@@ -447,12 +447,12 @@ const LandingPage: React.FC = () => {
       {/* ═══ TESTIMONIALS ════ */}
       <section style={{ padding: '100px 32px', background: 'var(--cloud)' }} className="section-pad">
         <div style={{ maxWidth: 1200, margin: '0 auto' }}>
-          <SectionHeader className="section-header-mb" eyebrow="Client Reviews" title="What Metro Manila Says" subtitle="Real feedback from real clients — no manufactured reviews." />
+          <SectionHeader className="section-header-mb" eyebrow="Client Reviews" title="What Our Clients Say" subtitle="Real feedback from real clients — no manufactured reviews." />
           <div className="testimonials-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 20 }}>
-            <Testimonial delay={0} rating={5} name="Ana V." city="Quezon City" text="Mark arrived exactly on time, cleaned all three units perfectly. The whole experience was smoother than I expected. Booking again next quarter." />
-            <Testimonial delay={80} rating={5} name="Bong M." city="Makati" text="Finally a service where I know the exact price before anyone shows up. No haggling. The deep clean genuinely made a difference." />
-            <Testimonial delay={160} rating={5} name="Cris L." city="Pasig" text="Used them for our office — four cassettes. Handled professionally, finished on schedule, and the price was competitive." />
-            <Testimonial delay={240} rating={4} name="Diana T." city="Taguig" text="On time, polite technician, thorough job. The digital service record and reminder system is genuinely useful. Will rebook." />
+            <Testimonial delay={0} rating={5} name="Ana V." city="Biñan" text="Mark arrived exactly on time, cleaned all three units perfectly. The whole experience was smoother than I expected. Booking again next quarter." />
+            <Testimonial delay={80} rating={5} name="Bong M." city="Muntinlupa" text="Finally a service where I know the exact price before anyone shows up. No haggling. The deep clean genuinely made a difference." />
+            <Testimonial delay={160} rating={5} name="Cris L." city="Sta. Rosa" text="Used them for our office — four cassettes. Handled professionally, finished on schedule, and the price was competitive." />
+            <Testimonial delay={240} rating={4} name="Diana T." city="San Pedro" text="On time, polite technician, thorough job. The digital service record and reminder system is genuinely useful. Will rebook." />
           </div>
         </div>
       </section>
@@ -460,9 +460,9 @@ const LandingPage: React.FC = () => {
       {/* ═══ COVERAGE ════ */}
       <section style={{ padding: '100px 32px', background: 'var(--white)' }} className="section-pad">
         <div style={{ maxWidth: 900, margin: '0 auto' }}>
-          <SectionHeader className="section-header-mb" eyebrow="Service Areas" title="Covering Metro Manila" subtitle="From Quezon City to Parañaque — same-day and next-day availability across 6 cities." />
+          <SectionHeader className="section-header-mb" eyebrow="Service Areas" title="Covering South Metro Manila & South Laguna" subtitle="From Muntinlupa to Cabuyao — same-day and next-day availability across 7 cities." />
           <div className="city-chips-wrap" style={{ display: 'flex', flexWrap: 'wrap', gap: 14, justifyContent: 'center', marginBottom: 40 }}>
-            {['Quezon City', 'Makati', 'Pasig', 'Taguig', 'Mandaluyong', 'Parañaque'].map((city, i) => (
+            {['Biñan', 'San Pedro', 'Sta. Rosa', 'Cabuyao', 'Muntinlupa', 'Carmona', 'GMA Cavite'].map((city, i) => (
               <CityChip key={city} name={city} delay={i * 60} />
             ))}
           </div>

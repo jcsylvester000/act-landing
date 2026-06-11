@@ -2,12 +2,12 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'ACT — Aircon Cleaning & Technician | Metro Manila',
-  description: 'Metro Manila\'s reliability-first aircon service. Accredited technicians, transparent pricing, and guaranteed quality. Book online in minutes.',
-  keywords: 'aircon cleaning, aircon service, Metro Manila, TESDA certified, Quezon City, Makati, Pasig, Taguig, Mandaluyong, Parañaque',
+  title: 'ACT — Aircon Cleaning & Technician | South Metro Manila & Laguna',
+  description: 'The reliability-first aircon service for South Metro Manila and South Laguna. Accredited technicians, transparent pricing, and guaranteed quality. Book online in minutes.',
+  keywords: 'aircon cleaning, aircon service, South Metro Manila, South Laguna, TESDA certified, Biñan, San Pedro, Sta. Rosa, Cabuyao, Muntinlupa, Carmona, GMA Cavite',
   openGraph: {
     title: 'ACT — Aircon Cleaning & Technician',
-    description: 'Accredited aircon services across Metro Manila. Book in 3 minutes.',
+    description: 'Accredited aircon services across South Metro Manila & South Laguna. Book in 3 minutes.',
     type: 'website',
   },
 };

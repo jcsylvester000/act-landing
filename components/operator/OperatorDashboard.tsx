@@ -103,7 +103,9 @@ const Sidebar: React.FC<{ active: string; onNav: (v: string) => void; unreadCoun
 
 // ─── TODAY PANEL ──────────────────────────────────────────────────────────────
 const TodayPanel: React.FC<{ jobs: Job[]; onNav: (v: string) => void }> = ({ jobs, onNav }) => {
-  const { currentUser } = useStore();
+  const { currentUser, updateJob, sendMessage, addNotification } = useStore();
+  const [fieldNotesJobId, setFieldNotesJobId] = useState<string | null>(null);
+  const [fieldNotesText, setFieldNotesText] = useState('');
   const today = new Date().toISOString().split('T')[0];
   const todayJobs = jobs.filter(j => j.preferredDate === today);
   const upcomingJobs = jobs.filter(j => j.preferredDate > today && j.status !== 'Cancelled').slice(0, 5);
@@ -167,9 +169,38 @@ const TodayPanel: React.FC<{ jobs: Job[]; onNav: (v: string) => void }> = ({ job
                     <div style={{ fontSize: 12, color: 'var(--slate)' }}>📍 {job.serviceAddress}, {job.city} · {job.timeSlot === 'AM' ? '8AM–12PM' : job.timeSlot === 'PM' ? '1PM–5PM' : 'Flexible'}</div>
                   </div>
                 </div>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0, flexWrap: 'wrap' }}>
                   <Badge label={job.status} />
                   <Button variant="secondary" size="sm" onClick={() => onNav('messages')}>Message</Button>
+                  {(job.status === 'Confirmed' || job.status === 'Scheduled') && (
+                    <Button variant="secondary" size="sm" onClick={() => { updateJob(job.id, { status: 'Active' }); addNotification({ userId: 'ADMIN001', jobId: job.id, message: `Operator marked job ${job.id} (${job.clientName}) as Active.`, type: 'info', read: false }); }}>🚀 Mark Active</Button>
+                  )}
+                  {job.status === 'Active' && fieldNotesJobId !== job.id && (
+                    <Button variant="secondary" size="sm" onClick={() => { setFieldNotesJobId(job.id); setFieldNotesText(job.techFieldNotes || ''); }}>✅ Mark Complete</Button>
+                  )}
+                  {job.status === 'Active' && fieldNotesJobId === job.id && (
+                    <div style={{ width: '100%', marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      <textarea
+                        value={fieldNotesText}
+                        onChange={e => setFieldNotesText(e.target.value)}
+                        placeholder="Field notes (work done, issues found)..."
+                        rows={2}
+                        style={{ width: '100%', padding: '8px 12px', borderRadius: 10, border: '1.5px solid var(--border)', fontFamily: 'var(--font-body)', fontSize: 13, resize: 'vertical', outline: 'none', boxSizing: 'border-box' }}
+                        onFocus={e => { e.target.style.borderColor = 'var(--polar)'; }}
+                        onBlur={e => { e.target.style.borderColor = 'var(--border)'; }}
+                      />
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <Button variant="secondary" size="sm" onClick={() => {
+                          const nextDue = new Date(); nextDue.setDate(nextDue.getDate() + 90);
+                          updateJob(job.id, { status: 'Completed', techFieldNotes: fieldNotesText || undefined, nextDueDate: nextDue.toISOString().split('T')[0] });
+                          addNotification({ userId: 'ADMIN001', jobId: job.id, message: `Job ${job.id} (${job.clientName}) marked Completed by operator.`, type: 'success', read: false });
+                          addNotification({ userId: job.clientId, jobId: job.id, message: `Your service for job ${job.id} is complete! Please leave a review.`, type: 'success', read: false });
+                          setFieldNotesJobId(null); setFieldNotesText('');
+                        }}>Confirm Complete</Button>
+                        <Button variant="ghost" size="sm" onClick={() => { setFieldNotesJobId(null); setFieldNotesText(''); }}>Cancel</Button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
@@ -203,12 +234,51 @@ const TodayPanel: React.FC<{ jobs: Job[]; onNav: (v: string) => void }> = ({ job
 
 // ─── MY JOBS PANEL ────────────────────────────────────────────────────────────
 const MyJobsPanel: React.FC<{ jobs: Job[]; onOpenMessages: (jobId: string) => void }> = ({ jobs, onOpenMessages }) => {
+  const { currentUser, updateJob, users, sendMessage, addNotification } = useStore();
   const [filter, setFilter] = useState('All');
   const statuses = ['All', 'Pending', 'Confirmed', 'Active', 'Completed', 'Cancelled'];
   const filtered = filter === 'All' ? jobs : jobs.filter(j => j.status === filter);
 
+  // Detail modal state
+  const [detailJob, setDetailJob] = useState<Job | null>(null);
+  const [detailNotes, setDetailNotes] = useState('');
+  const [showScopeForm, setShowScopeForm] = useState(false);
+  const [scopeNotes, setScopeNotes] = useState('');
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' | 'warning'; visible: boolean }>({ message: '', type: 'success', visible: false });
+  const showToast = (msg: string, type: 'success' | 'error' | 'info' | 'warning' = 'success') => { setToast({ message: msg, type, visible: true }); setTimeout(() => setToast(t => ({ ...t, visible: false })), 3000); };
+
+  // Complete flow state
+  const [completeJobId, setCompleteJobId] = useState<string | null>(null);
+  const [completeNotes, setCompleteNotes] = useState('');
+
+  const openDetail = (job: Job) => { setDetailJob(job); setDetailNotes(job.techFieldNotes || ''); setShowScopeForm(false); setScopeNotes(''); };
+
+  const handleSendScopeReport = (job: Job) => {
+    if (!scopeNotes.trim() || !currentUser) return;
+    updateJob(job.id, { techFieldNotes: scopeNotes });
+    sendMessage({
+      jobId: job.id,
+      senderId: currentUser.id,
+      senderName: `${currentUser.firstName} ${currentUser.lastName}`,
+      senderRole: 'operator',
+      content: `⚠️ Scope change report: ${scopeNotes}. Please advise on how to proceed.`,
+      type: 'text',
+      readBy: [currentUser.id],
+    });
+    addNotification({ userId: 'ADMIN001', jobId: job.id, message: `⚠️ Scope change report from operator on job ${job.id} (${job.clientName}): ${scopeNotes}`, type: 'warning', read: false });
+    setShowScopeForm(false); setScopeNotes('');
+    showToast('Scope change report sent to admin.');
+    if (detailJob?.id === job.id) setDetailJob({ ...job, techFieldNotes: scopeNotes });
+  };
+
+  const handleSaveDetailNotes = (job: Job) => {
+    updateJob(job.id, { techFieldNotes: detailNotes });
+    showToast('Field notes saved.');
+  };
+
   return (
     <div>
+      <Toast {...toast} />
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
         <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 24, fontWeight: 800, color: 'var(--midnight)' }}>
           My Jobs <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--slate)' }}>({filtered.length})</span>
@@ -236,25 +306,141 @@ const MyJobsPanel: React.FC<{ jobs: Job[]; onOpenMessages: (jobId: string) => vo
           <tbody>
             {filtered.length === 0 ? (
               <tr><td colSpan={8} style={{ padding: '40px', textAlign: 'center', color: 'var(--slate)', fontSize: 14 }}>No jobs found.</td></tr>
-            ) : filtered.map(job => (
-              <tr key={job.id} style={{ borderTop: '1px solid var(--mist)' }}
-                onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--cloud)'}
-                onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'white'}>
-                <td style={{ padding: '12px 16px', fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--polar)' }}>{job.id}</td>
-                <td style={{ padding: '12px 16px', fontSize: 14, fontWeight: 600 }}>{job.clientName}</td>
-                <td style={{ padding: '12px 16px', fontSize: 13, color: 'var(--slate)', whiteSpace: 'nowrap' }}>{job.serviceType}</td>
-                <td style={{ padding: '12px 16px', fontSize: 13, whiteSpace: 'nowrap' }}>{job.preferredDate}<br /><span style={{ fontSize: 11, color: 'var(--slate)' }}>{job.timeSlot}</span></td>
-                <td style={{ padding: '12px 16px', fontSize: 13, color: 'var(--slate)' }}>{job.city}</td>
-                <td style={{ padding: '12px 16px' }}><Badge label={job.status} /></td>
-                <td style={{ padding: '12px 16px', fontSize: 13, color: job.technicianName ? 'var(--verified)' : 'var(--slate)' }}>{job.technicianName || '—'}</td>
-                <td style={{ padding: '12px 16px' }}>
-                  <Button variant="secondary" size="sm" onClick={() => onOpenMessages(job.id)}>💬 Message</Button>
-                </td>
-              </tr>
-            ))}
+            ) : filtered.map(job => {
+              const client = users.find(u => u.id === job.clientId);
+              return (
+                <React.Fragment key={job.id}>
+                  <tr style={{ borderTop: '1px solid var(--mist)' }}
+                    onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--cloud)'}
+                    onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'white'}>
+                    <td style={{ padding: '12px 16px', fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--polar)' }}>{job.id}</td>
+                    <td style={{ padding: '12px 16px', fontSize: 14, fontWeight: 600 }}>
+                      {job.clientName}
+                      {client?.phone && <div style={{ fontSize: 11, color: 'var(--slate)', marginTop: 2 }}>📱 {client.phone}</div>}
+                    </td>
+                    <td style={{ padding: '12px 16px', fontSize: 13, color: 'var(--slate)', whiteSpace: 'nowrap' }}>{job.serviceType}</td>
+                    <td style={{ padding: '12px 16px', fontSize: 13, whiteSpace: 'nowrap' }}>{job.preferredDate}<br /><span style={{ fontSize: 11, color: 'var(--slate)' }}>{job.timeSlot}</span></td>
+                    <td style={{ padding: '12px 16px', fontSize: 13, color: 'var(--slate)' }}>{job.city}</td>
+                    <td style={{ padding: '12px 16px' }}><Badge label={job.status} /></td>
+                    <td style={{ padding: '12px 16px', fontSize: 13, color: job.technicianName ? 'var(--verified)' : 'var(--slate)' }}>{job.technicianName || '—'}</td>
+                    <td style={{ padding: '12px 16px' }}>
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                        <Button variant="secondary" size="sm" onClick={() => onOpenMessages(job.id)}>💬 Message</Button>
+                        <Button variant="ghost" size="sm" onClick={() => openDetail(job)}>🔍 Details</Button>
+                        {(job.status === 'Confirmed' || job.status === 'Scheduled') && (
+                          <Button variant="secondary" size="sm" onClick={() => { updateJob(job.id, { status: 'Active' }); addNotification({ userId: 'ADMIN001', jobId: job.id, message: `Operator marked job ${job.id} (${job.clientName}) as Active.`, type: 'info', read: false }); showToast('Job marked Active.'); }}>🚀 Mark Active</Button>
+                        )}
+                        {job.status === 'Active' && completeJobId !== job.id && (
+                          <Button variant="secondary" size="sm" onClick={() => { setCompleteJobId(job.id); setCompleteNotes(job.techFieldNotes || ''); }}>✅ Mark Complete</Button>
+                        )}
+                        {job.status === 'Active' && completeJobId === job.id && (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingTop: 4 }}>
+                            <textarea
+                              value={completeNotes}
+                              onChange={e => setCompleteNotes(e.target.value)}
+                              placeholder="Field notes (work done, issues found)..."
+                              rows={2}
+                              style={{ padding: '8px 10px', borderRadius: 8, border: '1.5px solid var(--border)', fontFamily: 'var(--font-body)', fontSize: 12, resize: 'vertical', outline: 'none', minWidth: 200 }}
+                              onFocus={e => { e.target.style.borderColor = 'var(--polar)'; }}
+                              onBlur={e => { e.target.style.borderColor = 'var(--border)'; }}
+                            />
+                            <div style={{ display: 'flex', gap: 6 }}>
+                              <Button variant="secondary" size="sm" onClick={() => {
+                                const nextDue = new Date(); nextDue.setDate(nextDue.getDate() + 90);
+                                updateJob(job.id, { status: 'Completed', techFieldNotes: completeNotes || undefined, nextDueDate: nextDue.toISOString().split('T')[0] });
+                                addNotification({ userId: 'ADMIN001', jobId: job.id, message: `Job ${job.id} (${job.clientName}) marked Completed by operator.`, type: 'success', read: false });
+                                addNotification({ userId: job.clientId, jobId: job.id, message: `Your service for job ${job.id} is complete! Please leave a review.`, type: 'success', read: false });
+                                setCompleteJobId(null); setCompleteNotes('');
+                                showToast('Job marked Completed!');
+                              }}>Confirm</Button>
+                              <Button variant="ghost" size="sm" onClick={() => { setCompleteJobId(null); setCompleteNotes(''); }}>Cancel</Button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                </React.Fragment>
+              );
+            })}
           </tbody>
         </table>
       </div>
+
+      {/* Job Detail Modal */}
+      <Modal open={!!detailJob} onClose={() => { setDetailJob(null); setShowScopeForm(false); }} title={`Job Details — ${detailJob?.id}`} maxWidth={520}>
+        {detailJob && (() => {
+          const client = users.find(u => u.id === detailJob.clientId);
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {/* Client & Job Info */}
+              <div style={{ background: 'var(--breeze)', borderRadius: 12, padding: 16 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--midnight)', marginBottom: 10 }}>Client & Job Info</div>
+                {[
+                  { label: 'Client', value: detailJob.clientName },
+                  { label: 'Phone', value: client?.phone || '—' },
+                  { label: 'Address', value: `${detailJob.serviceAddress}, ${detailJob.city}` },
+                  { label: 'Service', value: `${detailJob.serviceType} — ${detailJob.numberOfUnits} ${detailJob.acType} unit${detailJob.numberOfUnits > 1 ? 's' : ''}` },
+                  { label: 'Date', value: `${detailJob.preferredDate} (${detailJob.timeSlot === 'AM' ? '8AM–12PM' : detailJob.timeSlot === 'PM' ? '1PM–5PM' : 'Flexible'})` },
+                  { label: 'Payment', value: detailJob.preferredPaymentMethod || '—' },
+                  { label: 'Technician', value: detailJob.technicianName || '—' },
+                  ...(detailJob.specialInstructions ? [{ label: 'Special Instructions', value: detailJob.specialInstructions }] : []),
+                ].map(r => (
+                  <div key={r.label} style={{ display: 'flex', gap: 10, marginBottom: 6 }}>
+                    <span style={{ fontSize: 12, color: 'var(--slate)', fontWeight: 700, minWidth: 110 }}>{r.label}:</span>
+                    <span style={{ fontSize: 13, color: 'var(--ink)', flex: 1 }}>{r.value}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Field Notes */}
+              <div>
+                <label style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', display: 'block', marginBottom: 8 }}>Field Notes</label>
+                <textarea
+                  value={detailNotes}
+                  onChange={e => setDetailNotes(e.target.value)}
+                  placeholder="Record what was found, what was done, any issues..."
+                  rows={3}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1.5px solid var(--border)', fontFamily: 'var(--font-body)', fontSize: 13, resize: 'vertical', outline: 'none', boxSizing: 'border-box' }}
+                  onFocus={e => { e.target.style.borderColor = 'var(--polar)'; }}
+                  onBlur={e => { e.target.style.borderColor = 'var(--border)'; }}
+                />
+                <Button variant="secondary" size="sm" style={{ marginTop: 8 }} onClick={() => handleSaveDetailNotes(detailJob)}>Save Notes</Button>
+              </div>
+
+              {/* Scope Change Report */}
+              {detailJob.status === 'Active' && (
+                <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16 }}>
+                  {!showScopeForm ? (
+                    <Button variant="ghost" size="sm" onClick={() => setShowScopeForm(true)}>📋 Report Scope Change</Button>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--midnight)' }}>📋 Report Scope Change</div>
+                      <textarea
+                        value={scopeNotes}
+                        onChange={e => setScopeNotes(e.target.value)}
+                        placeholder="What did you find? Describe the scope change..."
+                        rows={3}
+                        style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1.5px solid var(--border)', fontFamily: 'var(--font-body)', fontSize: 13, resize: 'vertical', outline: 'none', boxSizing: 'border-box' }}
+                        onFocus={e => { e.target.style.borderColor = 'var(--polar)'; }}
+                        onBlur={e => { e.target.style.borderColor = 'var(--border)'; }}
+                      />
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <Button variant="secondary" size="sm" onClick={() => handleSendScopeReport(detailJob)} disabled={!scopeNotes.trim()}>Send Report to Admin</Button>
+                        <Button variant="ghost" size="sm" onClick={() => { setShowScopeForm(false); setScopeNotes(''); }}>Cancel</Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <Button variant="ghost" onClick={() => { setDetailJob(null); setShowScopeForm(false); }}>Close</Button>
+              </div>
+            </div>
+          );
+        })()}
+      </Modal>
     </div>
   );
 };
@@ -362,6 +548,7 @@ const MessageBubble: React.FC<{ msg: Message; currentUserId: string; onRespondIn
 // ─── MESSAGES PANEL ───────────────────────────────────────────────────────────
 const MessagesPanel: React.FC<{ jobs: Job[]; initialJobId?: string | null }> = ({ jobs, initialJobId }) => {
   const { currentUser, messages, sendMessage, markMessagesRead, respondToCalendarInvite, jobs: allJobs } = useStore();
+  const { isMobile } = useBreakpoint();
   const [selectedJobId, setSelectedJobId] = useState<string | null>(initialJobId || (jobs[0]?.id ?? null));
   const [newMessage, setNewMessage] = useState('');
   const [showInviteForm, setShowInviteForm] = useState(false);
@@ -424,9 +611,9 @@ const MessagesPanel: React.FC<{ jobs: Job[]; initialJobId?: string | null }> = (
   };
 
   return (
-    <div style={{ display: 'flex', height: 'calc(100vh - 160px)', minHeight: 500, gap: 20 }}>
+    <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', height: isMobile ? 'auto' : 'calc(100vh - 160px)', minHeight: 500, gap: 20 }}>
       {/* Thread list */}
-      <div style={{ width: 280, flexShrink: 0, background: 'white', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ width: isMobile ? '100%' : 280, maxHeight: isMobile ? 220 : undefined, flexShrink: 0, background: 'white', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         <div style={{ padding: '16px 16px 12px', borderBottom: '1px solid var(--border)' }}>
           <h3 style={{ fontFamily: 'var(--font-display)', fontSize: 16, fontWeight: 800, color: 'var(--midnight)' }}>Conversations</h3>
           <div style={{ fontSize: 12, color: 'var(--slate)', marginTop: 2 }}>{jobs.length} active thread{jobs.length !== 1 ? 's' : ''}</div>
@@ -627,7 +814,7 @@ const SchedulePanel: React.FC<{ jobs: Job[] }> = ({ jobs }) => {
                 const dateStr = d.toISOString().split('T')[0];
                 const dayJobs = jobs.filter(j =>
                   j.preferredDate === dateStr &&
-                  (j.timeSlot === slot || j.timeSlot === 'Flexible') &&
+                  (j.timeSlot === slot || (j.timeSlot === 'Flexible' && slot === 'AM')) &&
                   j.status !== 'Cancelled'
                 );
                 return (
@@ -639,8 +826,8 @@ const SchedulePanel: React.FC<{ jobs: Job[] }> = ({ jobs }) => {
                         borderRadius: 8, padding: '6px 8px', fontSize: 11, fontWeight: 600,
                         color: job.status === 'Completed' ? '#065F46' : 'var(--polar)', marginBottom: 4,
                       }}>
-                        <div>{job.clientName}</div>
-                        <div style={{ fontWeight: 500, color: job.status === 'Completed' ? '#065F46' : 'var(--slate)' }}>{job.serviceType.split(' ')[0]}</div>
+                        <div>{job.clientName} — {job.serviceType.split(' ')[0]}</div>
+                        <div style={{ fontWeight: 500, color: job.status === 'Completed' ? '#065F46' : 'var(--slate)' }}>{job.status}{job.timeSlot === 'Flexible' ? ' · Flexible' : ''}</div>
                       </div>
                     ))}
                     {dayJobs.length === 0 && <span style={{ fontSize: 11, color: 'var(--mist)' }}>—</span>}
@@ -655,47 +842,6 @@ const SchedulePanel: React.FC<{ jobs: Job[] }> = ({ jobs }) => {
   );
 };
 
-// ─── PROFILE PANEL ────────────────────────────────────────────────────────────
-const ProfilePanel: React.FC = () => {
-  const { currentUser } = useStore();
-  if (!currentUser) return null;
-
-  return (
-    <div style={{ maxWidth: 560 }}>
-      <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 24, fontWeight: 800, color: 'var(--midnight)', marginBottom: 24 }}>My Profile</h2>
-      <Card style={{ marginBottom: 20 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 24 }}>
-          <div style={{ width: 72, height: 72, borderRadius: '50%', background: 'linear-gradient(135deg, var(--polar), var(--frost))', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontFamily: 'var(--font-display)', fontSize: 28, fontWeight: 800, flexShrink: 0 }}>
-            {currentUser.firstName[0]}
-          </div>
-          <div>
-            <div style={{ fontFamily: 'var(--font-display)', fontSize: 22, fontWeight: 800, color: 'var(--midnight)' }}>{currentUser.firstName} {currentUser.lastName}</div>
-            <div style={{ fontSize: 13, color: 'var(--slate)' }}>{currentUser.email} · {currentUser.phone}</div>
-            <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
-              <span style={{ background: 'rgba(10,110,143,0.1)', color: 'var(--polar)', fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 99, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Operator</span>
-              <span style={{ background: 'var(--verified-bg)', color: 'var(--verified)', fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 99, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{currentUser.operatorStatus || 'Active'}</span>
-            </div>
-          </div>
-        </div>
-        {[
-          { label: 'Employee ID', value: currentUser.id },
-          { label: 'Assigned Cities', value: (currentUser.assignedCities || []).join(', ') || 'Not assigned' },
-          { label: 'Member Since', value: new Date(currentUser.createdAt).toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' }) },
-        ].map(r => (
-          <div key={r.label} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
-            <span style={{ fontSize: 13, color: 'var(--slate)', fontWeight: 600 }}>{r.label}</span>
-            <span style={{ fontSize: 13, color: 'var(--ink)', fontFamily: r.label === 'Employee ID' ? 'var(--font-mono)' : 'var(--font-body)', fontWeight: 500 }}>{r.value}</span>
-          </div>
-        ))}
-      </Card>
-      <div style={{ background: 'var(--breeze)', borderRadius: 14, padding: '16px 20px', fontSize: 13, color: 'var(--slate)', lineHeight: 1.7 }}>
-        💡 Need to update your profile or request reassignment? Contact your ACT Admin at <strong style={{ color: 'var(--polar)' }}>admin@act.ph</strong>
-      </div>
-    </div>
-  );
-};
-
-// ─── MAIN OPERATOR DASHBOARD ───────────────────────────────────────────────────
 // ─── INVOICES PANEL ───────────────────────────────────────────────────────────
 const InvoicesPanel: React.FC<{ jobs: Job[] }> = ({ jobs }) => {
   const { currentUser, serviceInvoices, createServiceInvoice, sendServiceInvoice, updateServiceInvoice, addNotification } = useStore();
@@ -705,9 +851,31 @@ const InvoicesPanel: React.FC<{ jobs: Job[] }> = ({ jobs }) => {
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' | 'warning'; visible: boolean }>({ message: '', type: 'success', visible: false });
   const showToast = (msg: string, type: 'success' | 'error' | 'info' | 'warning' = 'success') => { setToast({ message: msg, type, visible: true }); setTimeout(() => setToast(t => ({ ...t, visible: false })), 3000); };
 
+  // Edit invoice state
+  const [editInvoiceId, setEditInvoiceId] = useState<string | null>(null);
+  const [editNotes, setEditNotes] = useState('');
+  const [editSubtotal, setEditSubtotal] = useState('');
+  const editInvoice = serviceInvoices.find(i => i.id === editInvoiceId);
+
+  const openEditInvoice = (invId: string) => {
+    const inv = serviceInvoices.find(i => i.id === invId);
+    if (!inv) return;
+    setEditInvoiceId(invId);
+    setEditNotes(inv.notes || '');
+    setEditSubtotal(String(inv.subtotal));
+  };
+
+  const handleSaveEditInvoice = () => {
+    if (!editInvoiceId || !editInvoice) return;
+    const newSubtotal = parseFloat(editSubtotal) || editInvoice.subtotal;
+    const newBalance = newSubtotal - editInvoice.reservationFeePaid;
+    updateServiceInvoice(editInvoiceId, { notes: editNotes || undefined, subtotal: newSubtotal, totalAmount: newSubtotal, balanceDue: newBalance > 0 ? newBalance : 0 });
+    setEditInvoiceId(null);
+    showToast('Invoice updated.');
+  };
+
   const myInvoices = serviceInvoices.filter(i => i.operatorId === currentUser?.id);
   const selectedJob = jobs.find(j => j.id === selectedJobId);
-  const pricing = selectedJob ? selectedJob.totalPrice : 0;
 
   const handleCreate = () => {
     if (!selectedJob || !currentUser) return;
@@ -751,11 +919,53 @@ const InvoicesPanel: React.FC<{ jobs: Job[] }> = ({ jobs }) => {
               invoice={inv}
               viewerRole="operator"
               onSend={() => { sendServiceInvoice(inv.id); showToast('Invoice sent to client!'); }}
-              onEdit={() => showToast('Edit functionality coming with database integration.', 'info')}
+              onEdit={() => openEditInvoice(inv.id)}
             />
           ))}
         </div>
       )}
+
+      {/* Edit Invoice Modal */}
+      <Modal open={!!editInvoiceId} onClose={() => setEditInvoiceId(null)} title="Edit Invoice" maxWidth={440}>
+        {editInvoice && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{ background: 'var(--breeze)', borderRadius: 12, padding: 14, fontSize: 13 }}>
+              <div style={{ fontWeight: 700, color: 'var(--midnight)', marginBottom: 6 }}>{editInvoice.id} — {editInvoice.clientName}</div>
+              <div style={{ color: 'var(--slate)' }}>Current status: <strong>{editInvoice.status}</strong></div>
+            </div>
+            <div>
+              <label style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', display: 'block', marginBottom: 8 }}>Notes to Client</label>
+              <textarea
+                value={editNotes}
+                onChange={e => setEditNotes(e.target.value)}
+                placeholder="Add or update notes for the client..."
+                rows={3}
+                style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1.5px solid var(--border)', fontFamily: 'var(--font-body)', fontSize: 13, resize: 'vertical', outline: 'none', boxSizing: 'border-box' }}
+                onFocus={e => { e.target.style.borderColor = 'var(--polar)'; }}
+                onBlur={e => { e.target.style.borderColor = 'var(--border)'; }}
+              />
+            </div>
+            <div>
+              <label style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', display: 'block', marginBottom: 8 }}>Subtotal / Total Amount (₱)</label>
+              <input
+                type="number"
+                value={editSubtotal}
+                onChange={e => setEditSubtotal(e.target.value)}
+                style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1.5px solid var(--border)', fontFamily: 'var(--font-body)', fontSize: 13, outline: 'none', boxSizing: 'border-box' }}
+                onFocus={e => { e.target.style.borderColor = 'var(--polar)'; }}
+                onBlur={e => { e.target.style.borderColor = 'var(--border)'; }}
+              />
+              <div style={{ fontSize: 12, color: 'var(--slate)', marginTop: 4 }}>
+                Reservation paid: ₱{editInvoice.reservationFeePaid.toLocaleString()} · New balance: ₱{Math.max(0, (parseFloat(editSubtotal) || editInvoice.subtotal) - editInvoice.reservationFeePaid).toLocaleString()}
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <Button variant="secondary" fullWidth onClick={handleSaveEditInvoice}>Save Changes</Button>
+              <Button variant="ghost" onClick={() => setEditInvoiceId(null)}>Cancel</Button>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       <Modal open={showCreate} onClose={() => setShowCreate(false)} title="Create Service Invoice" maxWidth={480}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -799,11 +1009,46 @@ const BillingPanel: React.FC<{ jobs: Job[] }> = ({ jobs }) => {
   const [workNotes, setWorkNotes] = useState('');
   const [extraDesc, setExtraDesc] = useState('');
   const [extraAmt, setExtraAmt] = useState('');
+  const [editBillingId, setEditBillingId] = useState<string | null>(null);
+  const [editWorkNotes, setEditWorkNotes] = useState('');
+  const [editExtraDesc, setEditExtraDesc] = useState('');
+  const [editExtraAmt, setEditExtraAmt] = useState('');
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' | 'warning'; visible: boolean }>({ message: '', type: 'success', visible: false });
   const showToast = (msg: string, type: 'success' | 'error' | 'info' | 'warning' = 'success') => { setToast({ message: msg, type, visible: true }); setTimeout(() => setToast(t => ({ ...t, visible: false })), 3000); };
 
   const myBilling = billingStatements.filter(b => b.operatorId === currentUser?.id);
   const selectedJob = jobs.find(j => j.id === selectedJobId);
+  const editBilling = billingStatements.find(b => b.id === editBillingId);
+
+  const openEditBilling = (id: string) => {
+    const bill = billingStatements.find(b => b.id === id);
+    if (!bill) return;
+    setEditBillingId(id);
+    setEditWorkNotes(bill.workNotes || '');
+    const extra = bill.lineItems[1];
+    setEditExtraDesc(extra?.description || '');
+    setEditExtraAmt(extra ? String(extra.amount) : '');
+  };
+
+  const handleSaveEditBilling = () => {
+    if (!editBillingId || !editBilling) return;
+    const base = editBilling.lineItems[0];
+    const extraAmount = parseFloat(editExtraAmt) || 0;
+    const items: InvoiceLineItem[] = [
+      base,
+      ...(extraAmount > 0 && editExtraDesc.trim() ? [{ id: '2', description: editExtraDesc.trim(), category: 'Parts' as const, quantity: 1, unitPrice: extraAmount, amount: extraAmount }] : []),
+    ];
+    const subtotal = base.amount + (extraAmount > 0 && editExtraDesc.trim() ? extraAmount : 0);
+    updateBillingStatement(editBillingId, {
+      workNotes: editWorkNotes.trim() || undefined,
+      lineItems: items,
+      subtotal,
+      totalAmount: subtotal,
+      amountDue: Math.max(0, subtotal - editBilling.reservationFeePaid),
+    });
+    setEditBillingId(null);
+    showToast('Billing statement updated.');
+  };
 
   const handleCreate = () => {
     if (!selectedJob || !currentUser) return;
@@ -850,11 +1095,56 @@ const BillingPanel: React.FC<{ jobs: Job[] }> = ({ jobs }) => {
               billing={bill}
               viewerRole="operator"
               onSubmitToAdmin={() => { submitBillingToAdmin(bill.id); showToast('Billing submitted to admin for review.'); }}
-              onEdit={() => showToast('Edit functionality coming with database integration.', 'info')}
+              onEdit={() => openEditBilling(bill.id)}
             />
           ))}
         </div>
       )}
+
+      {/* Edit Billing Modal */}
+      <Modal open={!!editBillingId} onClose={() => setEditBillingId(null)} title="Edit Billing Statement" maxWidth={460}>
+        {editBilling && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{ background: 'var(--breeze)', borderRadius: 12, padding: 14, fontSize: 13 }}>
+              <div style={{ fontWeight: 700, color: 'var(--midnight)', marginBottom: 6 }}>{editBilling.id} — {editBilling.clientName}</div>
+              <div style={{ color: 'var(--slate)' }}>Current status: <strong>{editBilling.status}</strong></div>
+            </div>
+            <div>
+              <label style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', display: 'block', marginBottom: 8 }}>Work Notes</label>
+              <textarea
+                value={editWorkNotes}
+                onChange={e => setEditWorkNotes(e.target.value)}
+                placeholder="Describe work performed, issues found, condition of units..."
+                rows={3}
+                style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1.5px solid var(--border)', fontFamily: 'var(--font-body)', fontSize: 13, resize: 'vertical', outline: 'none', boxSizing: 'border-box' }}
+                onFocus={e => { e.target.style.borderColor = 'var(--polar)'; }}
+                onBlur={e => { e.target.style.borderColor = 'var(--border)'; }}
+              />
+            </div>
+            <div style={{ background: 'var(--breeze)', borderRadius: 10, padding: '12px 14px' }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--midnight)', marginBottom: 8 }}>Additional Charge (optional)</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 10 }}>
+                <Input label="" value={editExtraDesc} onChange={e => setEditExtraDesc(e.target.value)} placeholder="e.g. Anti-bacterial treatment" />
+                <div style={{ minWidth: 100 }}>
+                  <Input label="" type="number" value={editExtraAmt} onChange={e => setEditExtraAmt(e.target.value)} placeholder="₱ amount" />
+                </div>
+              </div>
+            </div>
+            <div style={{ background: 'white', border: '1px solid var(--mist)', borderRadius: 12, padding: 14, fontSize: 13 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: 'var(--slate)' }}>Service total</span><span style={{ fontFamily: 'var(--font-mono)' }}>₱{editBilling.lineItems[0].amount.toLocaleString()}</span></div>
+              {(parseFloat(editExtraAmt) || 0) > 0 && editExtraDesc.trim() && <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: 'var(--slate)' }}>Additional</span><span style={{ fontFamily: 'var(--font-mono)' }}>₱{(parseFloat(editExtraAmt) || 0).toLocaleString()}</span></div>}
+              <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border)', marginTop: 6, paddingTop: 6, fontWeight: 700 }}>
+                <span>New Balance Due</span>
+                <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--polar)' }}>₱{Math.max(0, editBilling.lineItems[0].amount + ((parseFloat(editExtraAmt) || 0) > 0 && editExtraDesc.trim() ? (parseFloat(editExtraAmt) || 0) : 0) - editBilling.reservationFeePaid).toLocaleString()}</span>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <Button variant="secondary" fullWidth onClick={handleSaveEditBilling}>Save Changes</Button>
+              <Button variant="ghost" onClick={() => setEditBillingId(null)}>Cancel</Button>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       <Modal open={showCreate} onClose={() => setShowCreate(false)} title="Create Billing Statement" maxWidth={480}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -891,6 +1181,46 @@ const BillingPanel: React.FC<{ jobs: Job[] }> = ({ jobs }) => {
           </div>
         </div>
       </Modal>
+    </div>
+  );
+};
+
+// ─── PROFILE PANEL ────────────────────────────────────────────────────────────
+const ProfilePanel: React.FC = () => {
+  const { currentUser } = useStore();
+  if (!currentUser) return null;
+
+  return (
+    <div style={{ maxWidth: 560 }}>
+      <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 24, fontWeight: 800, color: 'var(--midnight)', marginBottom: 24 }}>My Profile</h2>
+      <Card style={{ marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 24 }}>
+          <div style={{ width: 72, height: 72, borderRadius: '50%', background: 'linear-gradient(135deg, var(--polar), var(--frost))', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontFamily: 'var(--font-display)', fontSize: 28, fontWeight: 800, flexShrink: 0 }}>
+            {currentUser.firstName[0]}
+          </div>
+          <div>
+            <div style={{ fontFamily: 'var(--font-display)', fontSize: 22, fontWeight: 800, color: 'var(--midnight)' }}>{currentUser.firstName} {currentUser.lastName}</div>
+            <div style={{ fontSize: 13, color: 'var(--slate)' }}>{currentUser.email} · {currentUser.phone}</div>
+            <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
+              <span style={{ background: 'rgba(10,110,143,0.1)', color: 'var(--polar)', fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 99, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Operator</span>
+              <span style={{ background: 'var(--verified-bg)', color: 'var(--verified)', fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 99, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{currentUser.operatorStatus || 'Active'}</span>
+            </div>
+          </div>
+        </div>
+        {[
+          { label: 'Employee ID', value: currentUser.id },
+          { label: 'Assigned Cities', value: (currentUser.assignedCities || []).join(', ') || 'Not assigned' },
+          { label: 'Member Since', value: new Date(currentUser.createdAt).toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' }) },
+        ].map(r => (
+          <div key={r.label} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
+            <span style={{ fontSize: 13, color: 'var(--slate)', fontWeight: 600 }}>{r.label}</span>
+            <span style={{ fontSize: 13, color: 'var(--ink)', fontFamily: r.label === 'Employee ID' ? 'var(--font-mono)' : 'var(--font-body)', fontWeight: 500 }}>{r.value}</span>
+          </div>
+        ))}
+      </Card>
+      <div style={{ background: 'var(--breeze)', borderRadius: 14, padding: '16px 20px', fontSize: 13, color: 'var(--slate)', lineHeight: 1.7 }}>
+        💡 Need to update your profile or request reassignment? Contact your ACT Admin at <strong style={{ color: 'var(--polar)' }}>admin@act.ph</strong>
+      </div>
     </div>
   );
 };

@@ -129,6 +129,16 @@ const BookingPage: React.FC = () => {
       if (currentUser.city) setCity(currentUser.city as CoverageCity || 'Biñan');
       // Pre-select preferred tech if client has one
       if (currentUser.preferredTechnicianId) setPreferredTechId(currentUser.preferredTechnicianId);
+      // Read rebook context from query params
+      const params = new URLSearchParams(window.location.search);
+      const stParam = params.get('st');
+      const atParam = params.get('at');
+      const unitsParam = params.get('units');
+      const techParam = params.get('techId');
+      if (stParam) setServiceType(stParam as ServiceType);
+      if (atParam) setAcType(atParam as ACType);
+      if (unitsParam) setUnits(parseInt(unitsParam) || 1);
+      if (techParam) setPreferredTechId(techParam);
       setAuthChecked(true);
     }
   }, [currentUser, router]);
@@ -173,6 +183,7 @@ const BookingPage: React.FC = () => {
       specialInstructions,
       nextDueDate: !isQuote ? dueDate.toISOString().split('T')[0] : undefined,
       requiresQuote: isQuote,
+      preferredPaymentMethod: paymentMethod,
       preferredTechnicianId: preferredTechId || undefined,
       preferredTechnicianName: preferredTech?.fullName,
     });
@@ -244,7 +255,7 @@ const BookingPage: React.FC = () => {
               { l: 'Time Slot', v: completedJob.timeSlot },
               { l: 'Location', v: `${completedJob.serviceAddress}, ${completedJob.city}` },
               { l: 'Total', v: `₱${completedJob.totalPrice.toLocaleString()}` },
-              { l: 'Reservation Fee', v: `₱${completedJob.reservationFee.toLocaleString()} (${paymentMethod})` },
+              ...(completedJob.reservationFee > 0 ? [{ l: 'Reservation Fee', v: `₱${completedJob.reservationFee.toLocaleString()} (${paymentMethod})` }] : []),
             ].map(r => (
               <div key={r.l} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10, fontSize: 14, borderBottom: '1px solid var(--border)', paddingBottom: 8 }}>
                 <span style={{ color: 'var(--slate)', fontWeight: 600 }}>{r.l}</span>
@@ -256,9 +267,9 @@ const BookingPage: React.FC = () => {
           <div style={{ background: 'var(--breeze)', border: '1px solid var(--mist)', borderRadius: 14, padding: 18, marginBottom: 28, textAlign: 'left' }}>
             <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--midnight)', marginBottom: 10 }}>What happens next?</div>
             {[
-              { num: '1', text: 'Our team verifies your payment (within 1 hour)' },
-              { num: '2', text: 'A certified technician is assigned to your job' },
-              { num: '3', text: 'You receive a confirmation with technician details' },
+              { num: '1', text: 'Our admin reviews your booking and checks technician availability' },
+              { num: '2', text: 'A technician is assigned and you receive a confirmation message' },
+              { num: '3', text: 'Your technician arrives on the scheduled date — payment is due after service' },
             ].map(s => (
               <div key={s.num} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', marginBottom: 8 }}>
                 <div style={{ width: 20, height: 20, borderRadius: '50%', background: 'var(--polar)', color: 'white', fontSize: 11, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}>{s.num}</div>

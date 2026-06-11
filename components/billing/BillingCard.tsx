@@ -1,8 +1,9 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import type { BillingStatement, BillingStatus } from '@/store';
 import { Button } from '@/components/ui';
+import { printDocument, PrintRoot } from './PrintExport';
 
 // ─── STATUS CONFIG ────────────────────────────────────────────────────────────
 const statusConfig: Record<BillingStatus, { bg: string; color: string; icon: string }> = {
@@ -32,6 +33,15 @@ const BillingCard: React.FC<Props> = ({
   billing, viewerRole, onSubmitToAdmin, onEdit, onApprove, onReject, onSendToClient, onMarkPaid, compact = false,
 }) => {
   const sc = statusConfig[billing.status] ?? statusConfig['Draft'];
+  const [showPrint, setShowPrint] = useState(false);
+
+  const handlePrint = () => {
+    setShowPrint(true);
+    setTimeout(() => {
+      printDocument(billing.id);
+      setTimeout(() => setShowPrint(false), 1000);
+    }, 100);
+  };
 
   return (
     <div style={{ background: 'white', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden', boxShadow: 'var(--shadow-xs)' }}>
@@ -188,8 +198,17 @@ const BillingCard: React.FC<Props> = ({
               💳 Balance of <strong style={{ fontFamily: 'var(--font-mono)' }}>₱{billing.amountDue.toLocaleString()}</strong> is due. Please pay your technician or coordinate with your ACT operator.
             </div>
           )}
+
+          {/* Download Receipt / PDF — available once billing is sent or paid */}
+          {(billing.status === 'Sent to Client' || billing.status === 'Paid' || billing.status === 'Admin Approved') && (
+            <Button variant="ghost" size="sm" onClick={handlePrint} style={{ marginLeft: 'auto' }}>
+              🖨️ {billing.status === 'Paid' ? 'Download Receipt' : 'Download PDF'}
+            </Button>
+          )}
         </div>
       </div>
+
+      {showPrint && <PrintRoot activeBilling={billing} />}
     </div>
   );
 };

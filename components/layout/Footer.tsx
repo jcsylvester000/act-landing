@@ -21,11 +21,11 @@ const Footer: React.FC = () => {
     {
       title: 'Coverage',
       links: [
-        { label: 'Quezon City', path: '/coverage' },
-        { label: 'Makati', path: '/coverage' },
-        { label: 'Pasig', path: '/coverage' },
-        { label: 'Taguig', path: '/coverage' },
-        { label: 'Mandaluyong & Parañaque', path: '/coverage' },
+        { label: 'Biñan & San Pedro', path: '/coverage' },
+        { label: 'Sta. Rosa & Cabuyao', path: '/coverage' },
+        { label: 'Muntinlupa', path: '/coverage' },
+        { label: 'Carmona & GMA Cavite', path: '/coverage' },
+        { label: 'View Full Coverage', path: '/coverage' },
       ],
     },
     {
@@ -66,7 +66,7 @@ const Footer: React.FC = () => {
             </div>
 
             <p style={{ color: 'rgba(255,255,255,0.55)', fontSize: 14, lineHeight: 1.8, marginBottom: 28, maxWidth: 300 }}>
-              Metro Manila&apos;s reliability-first aircon service. Accredited technicians, transparent pricing, and guaranteed quality — season after season.
+              The reliability-first aircon service for South Metro Manila &amp; South Laguna. Accredited technicians, transparent pricing, and guaranteed quality — season after season.
             </p>
 
             {/* Contact points */}
@@ -99,6 +99,9 @@ const Footer: React.FC = () => {
               ].map(s => (
                 <button
                   key={s.label}
+                  aria-label={`${s.label} — reach us via the Contact page`}
+                  title="Reach us via the Contact page"
+                  onClick={() => router.push('/contact')}
                   style={{
                     width: 36, height: 36, borderRadius: 10,
                     background: 'rgba(255,255,255,0.06)',
@@ -155,7 +158,7 @@ const Footer: React.FC = () => {
             <img src="/accreditation-seal.png" alt="Accredited" style={{ width: 52, height: 52, opacity: 0.9 }} />
             <div>
               <div style={{ fontSize: 13, fontWeight: 800, color: 'rgba(255,255,255,0.85)' }}>ACT Accredited Aircon Service</div>
-              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)' }}>TESDA Certified · DICT Registered · Metro Manila Licensed</div>
+              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)' }}>TESDA Certified · Background-Verified · South Metro Manila &amp; Laguna</div>
             </div>
           </div>
           <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
@@ -183,7 +186,7 @@ const Footer: React.FC = () => {
           </p>
           <div style={{ display: 'flex', gap: 20 }}>
             {['Privacy Policy', 'Terms of Service', 'Refund Policy'].map(t => (
-              <button key={t} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: 'rgba(255,255,255,0.3)', fontFamily: 'var(--font-body)', transition: 'color 0.2s' }}
+              <button key={t} onClick={() => router.push(`/legal#${t.toLowerCase().replace(/ /g, '-')}`)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: 'rgba(255,255,255,0.3)', fontFamily: 'var(--font-body)', transition: 'color 0.2s' }}
                 onMouseEnter={e => { e.currentTarget.style.color = 'rgba(255,255,255,0.6)'; }}
                 onMouseLeave={e => { e.currentTarget.style.color = 'rgba(255,255,255,0.3)'; }}
               >{t}</button>

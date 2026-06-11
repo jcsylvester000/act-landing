@@ -70,6 +70,7 @@ export interface Job {
   preferredTechnicianId?: string; // client may request a specific tech they trust
   preferredTechnicianName?: string;
   techFieldNotes?: string;        // technician's on-site report (issues found, scope changes)
+  preferredPaymentMethod?: 'GCash' | 'Cash' | 'Bank Transfer' | 'Check';
   isAdminCreated?: boolean;       // admin booked on behalf of client
 }
 
@@ -201,6 +202,8 @@ export interface ServiceInvoice {
   sentAt?: string;
   viewedAt?: string;
   respondedAt?: string;
+  revisionCount?: number;
+  revisedAt?: string;
   dueDate?: string;
   createdAt: string;
 }
@@ -240,6 +243,11 @@ export interface BillingStatement {
   sentToClientAt?: string;
   paidAt?: string;
   paymentMethod?: 'GCash' | 'Cash' | 'Bank Transfer' | 'Check';
+  dueDate?: string;
+  amountPaidAtClose?: number;
+  receiptNumber?: string;
+  checkNumber?: string;
+  internalNotes?: string;
   createdAt: string;
 }
 
@@ -315,6 +323,7 @@ interface AppState {
   adminReviewBilling: (id: string, approved: boolean, adminNotes?: string) => void;
   sendBillingToClient: (id: string) => void;
   markBillingPaid: (id: string, paymentMethod: BillingStatement['paymentMethod']) => void;
+  markBillingOverdue: (id: string) => void;
 }
 
 // ─── PRICING ──────────────────────────────────────────────────────────────────
@@ -559,7 +568,21 @@ export const useStore = create<AppState>()(
 
       // ── JOBS ──────────────────────────────────────────────────────────────
       addJob: (j) => { const job: Job = { ...j, id: 'JOB' + generateId(), createdAt: new Date().toISOString() }; set(s => ({ jobs: [job, ...s.jobs] })); return job; },
-      updateJob: (id, u) => set(s => ({ jobs: s.jobs.map(j => j.id === id ? { ...j, ...u } : j) })),
+      updateJob: (id, u) => {
+        const prevJob = get().jobs.find(j => j.id === id);
+        set(s => ({ jobs: s.jobs.map(j => j.id === id ? { ...j, ...u } : j) }));
+        if (!prevJob) return;
+        if (u.status === 'Completed' && prevJob.status !== 'Completed') {
+          get().addNotification({ userId: prevJob.clientId, jobId: id, message: `Your ${prevJob.serviceType} service is complete! Please rate your experience — it takes just 5 seconds. ⭐`, type: 'success', read: false });
+        }
+        if (u.status === 'Cancelled' && prevJob.status !== 'Cancelled') {
+          get().addNotification({ userId: 'ADMIN001', jobId: id, message: `Job ${id} (${prevJob.clientName}) was cancelled. ${u.cancellationReason ? 'Reason: ' + u.cancellationReason : ''}`, type: 'warning', read: false });
+          if (prevJob.operatorId) get().addNotification({ userId: prevJob.operatorId, jobId: id, message: `Job ${id} (${prevJob.clientName}) has been cancelled.`, type: 'warning', read: false });
+        }
+        if (u.technicianId && u.technicianName && u.technicianId !== prevJob.technicianId) {
+          get().addNotification({ userId: prevJob.clientId, jobId: id, message: `${u.technicianName} has been assigned to your ${prevJob.serviceType} on ${prevJob.preferredDate}. We'll message you shortly with details!`, type: 'success', read: false });
+        }
+      },
       getJobsByClient: (cid) => get().jobs.filter(j => j.clientId === cid),
 
       // ── TECHNICIANS ───────────────────────────────────────────────────────
@@ -614,9 +637,16 @@ export const useStore = create<AppState>()(
       updateServiceInvoice: (id, u) => set(s => ({ serviceInvoices: s.serviceInvoices.map(i => i.id === id ? { ...i, ...u } : i) })),
       sendServiceInvoice: (id) => {
         const now = new Date().toISOString();
-        set(s => ({ serviceInvoices: s.serviceInvoices.map(i => i.id === id ? { ...i, status: 'Sent' as InvoiceStatus, sentAt: now } : i) }));
+        const existing = get().serviceInvoices.find(i => i.id === id);
+        const isRevision = existing?.status === 'Revision Requested';
+        set(s => ({ serviceInvoices: s.serviceInvoices.map(i => i.id === id ? { ...i, status: 'Sent' as InvoiceStatus, sentAt: now, viewedAt: undefined, respondedAt: undefined, clientNote: undefined, revisionCount: isRevision ? (i.revisionCount || 0) + 1 : (i.revisionCount || 0), revisedAt: isRevision ? now : i.revisedAt } : i) }));
         const inv = get().serviceInvoices.find(i => i.id === id);
-        if (inv) get().addNotification({ userId: inv.clientId, jobId: inv.jobId, message: `Your service invoice ${inv.id} for ₱${inv.totalAmount.toLocaleString()} has been sent. Please review and respond.`, type: 'info', read: false });
+        if (inv) {
+          const msg = isRevision
+            ? `Revised invoice ${inv.id} (Rev. ${inv.revisionCount}) for ₱${inv.totalAmount.toLocaleString()} is ready. Please review the updated quote.`
+            : `Your service invoice ${inv.id} for ₱${inv.totalAmount.toLocaleString()} has been sent. Please review and respond.`;
+          get().addNotification({ userId: inv.clientId, jobId: inv.jobId, message: msg, type: 'info', read: false });
+        }
       },
       respondToServiceInvoice: (id, action, note, clientId) => {
         const now = new Date().toISOString();
@@ -626,6 +656,9 @@ export const useStore = create<AppState>()(
         if (inv) {
           if (action === 'cancel') {
             get().updateJob(inv.jobId, { status: 'Cancelled', cancellationReason: note || 'Client cancelled after reviewing invoice.' });
+          }
+          if (action === 'accept') {
+            get().updateJob(inv.jobId, { status: 'Confirmed', totalPrice: inv.totalAmount, balanceDue: inv.balanceDue });
           }
           get().addNotification({
             userId: inv.operatorId, jobId: inv.jobId,
@@ -663,18 +696,25 @@ export const useStore = create<AppState>()(
       },
       markBillingPaid: (id, paymentMethod) => {
         const now = new Date().toISOString();
-        set(s => ({
-          billingStatements: s.billingStatements.map(b => b.id === id ? { ...b, status: 'Paid' as BillingStatus, paidAt: now, paymentMethod, amountDue: 0 } : b),
-        }));
+        const bill = get().billingStatements.find(b => b.id === id);
+        if (!bill) return;
+        const amountPaidAtClose = bill.amountDue;
+        set(s => ({ billingStatements: s.billingStatements.map(b => b.id === id ? { ...b, status: 'Paid' as BillingStatus, paidAt: now, paymentMethod, amountDue: 0, amountPaidAtClose } : b) }));
+        get().updateJob(bill.jobId, { paymentStatus: 'Fully paid', balanceDue: 0 });
+        get().addNotification({ userId: bill.operatorId, jobId: bill.jobId, message: `Billing ${id} for job ${bill.jobId} marked as paid (${paymentMethod}).`, type: 'success', read: false });
+        get().addNotification({ userId: bill.clientId, jobId: bill.jobId, message: `Payment received! Your service is now fully settled. Thank you for choosing ACT! 🙏`, type: 'success', read: false });
+      },
+      markBillingOverdue: (id) => {
+        set(s => ({ billingStatements: s.billingStatements.map(b => b.id === id ? { ...b, status: 'Overdue' as BillingStatus } : b) }));
         const bill = get().billingStatements.find(b => b.id === id);
         if (bill) {
-          get().updateJob(bill.jobId, { paymentStatus: 'Fully paid', balanceDue: 0 });
-          get().addNotification({ userId: bill.operatorId, jobId: bill.jobId, message: `Billing ${id} for job ${bill.jobId} marked as paid (${paymentMethod}).`, type: 'success', read: false });
+          get().addNotification({ userId: bill.clientId, jobId: bill.jobId, message: `⚠️ Your payment for job ${bill.jobId} (₱${bill.amountDue.toLocaleString()}) is now overdue. Please settle at your earliest convenience.`, type: 'warning', read: false });
+          get().addNotification({ userId: 'ADMIN001', jobId: bill.jobId, message: `Billing ${id} for ${bill.clientName} is overdue (₱${bill.amountDue.toLocaleString()}).`, type: 'warning', read: false });
         }
       },
     }),
     {
-      name: 'act-store-v6',
+      name: 'act-store-v7',
       partialize: (s) => ({
         currentUser: s.currentUser,
         users: s.users,

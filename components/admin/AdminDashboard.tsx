@@ -8,13 +8,18 @@ import type { Job, Technician, Message, ServiceInvoice, BillingStatement } from 
 import { Button, Badge, Card, StatCard, Modal, Select, Input, Toast } from '@/components/ui';
 import InvoiceCard from '@/components/billing/InvoiceCard';
 import BillingCard from '@/components/billing/BillingCard';
+import { exportBillingCSV, exportJobsCSV, exportMonthlySummaryCSV } from '@/components/export/ExportUtils';
 
 // ─── ADMIN SIDEBAR ────────────────────────────────────────────────────────────
 const AdminSidebar: React.FC<{ active: string; onNav: (v: string) => void }> = ({ active, onNav }) => {
   const { isMobile, isTablet } = useBreakpoint();
   const isNarrow = isMobile || isTablet;
-  const { logout } = useStore();
+  const { logout, notifications, markNotificationRead } = useStore();
   const router = useRouter();
+  const [showNotifPanel, setShowNotifPanel] = useState(false);
+  const adminNotifs = notifications.filter(n => n.userId === 'ADMIN001');
+  const unreadNotifs = adminNotifs.filter(n => !n.read);
+  const recentNotifs = adminNotifs.slice(0, 10);
   const navItems = [
     { key: 'dashboard', icon: '📊', label: 'Dashboard' },
     { key: 'jobs', icon: '📋', label: 'Job Queue' },
@@ -40,13 +45,54 @@ const AdminSidebar: React.FC<{ active: string; onNav: (v: string) => void }> = (
       flexShrink: 0,
     }}>
       <div className="admin-sidebar-header" style={{ padding: '24px 20px', borderBottom: '1px solid rgba(255,255,255,0.1)', display: isNarrow ? 'none' : undefined }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <img src="/logo-act.png" alt="ACT" style={{ width: 40, height: 40, borderRadius: 10 }} />
-          <div>
-            <div style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 800, color: 'white' }}>ACT<span style={{ color: 'var(--ember)' }}>.</span></div>
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>Admin Panel</div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <img src="/logo-act.png" alt="ACT" style={{ width: 40, height: 40, borderRadius: 10 }} />
+            <div>
+              <div style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 800, color: 'white' }}>ACT<span style={{ color: 'var(--ember)' }}>.</span></div>
+              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>Admin Panel</div>
+            </div>
           </div>
+          {/* Notification Bell */}
+          <button onClick={() => setShowNotifPanel(p => !p)} style={{ position: 'relative', background: showNotifPanel ? 'rgba(91,196,214,0.2)' : 'transparent', border: '1.5px solid rgba(255,255,255,0.15)', borderRadius: 10, padding: '7px 10px', cursor: 'pointer', color: 'white', fontSize: 18, lineHeight: 1, display: 'flex', alignItems: 'center', transition: 'all 0.2s' }} title="Notifications">
+            🔔
+            {unreadNotifs.length > 0 && (
+              <span style={{ position: 'absolute', top: -4, right: -4, background: '#EF4444', color: 'white', fontSize: 10, fontWeight: 800, borderRadius: 99, minWidth: 18, height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px', border: '2px solid var(--midnight)' }}>
+                {unreadNotifs.length > 9 ? '9+' : unreadNotifs.length}
+              </span>
+            )}
+          </button>
         </div>
+        {/* Notification Panel */}
+        {showNotifPanel && (
+          <div style={{ position: 'absolute', top: 88, left: 12, right: 12, background: '#1E293B', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 14, boxShadow: '0 8px 32px rgba(0,0,0,0.4)', zIndex: 200, overflow: 'hidden', maxHeight: 440, display: 'flex', flexDirection: 'column' }}>
+            <div style={{ padding: '12px 16px', borderBottom: '1px solid rgba(255,255,255,0.1)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ color: 'white', fontSize: 13, fontWeight: 700 }}>Notifications {unreadNotifs.length > 0 && <span style={{ background: '#EF4444', color: 'white', fontSize: 10, fontWeight: 800, padding: '1px 6px', borderRadius: 99, marginLeft: 6 }}>{unreadNotifs.length}</span>}</span>
+              {unreadNotifs.length > 0 && (
+                <button onClick={() => unreadNotifs.forEach(n => markNotificationRead(n.id))} style={{ background: 'transparent', border: 'none', color: 'rgba(91,196,214,0.9)', fontSize: 11, cursor: 'pointer', fontFamily: 'var(--font-body)', fontWeight: 600 }}>Mark all read</button>
+              )}
+            </div>
+            <div style={{ overflowY: 'auto', flex: 1 }}>
+              {recentNotifs.length === 0 ? (
+                <div style={{ padding: '24px 16px', textAlign: 'center', color: 'rgba(255,255,255,0.4)', fontSize: 13 }}>No notifications yet.</div>
+              ) : recentNotifs.map(n => {
+                const typeIcon = n.type === 'success' ? '✅' : n.type === 'warning' ? '⚠️' : n.type === 'error' ? '❌' : 'ℹ️';
+                return (
+                  <div key={n.id} style={{ padding: '10px 14px', borderBottom: '1px solid rgba(255,255,255,0.07)', background: n.read ? 'transparent' : 'rgba(91,196,214,0.07)', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                    <span style={{ fontSize: 15, flexShrink: 0, marginTop: 1 }}>{typeIcon}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12, color: n.read ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.9)', lineHeight: 1.5 }}>{n.message}</div>
+                      <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginTop: 3 }}>{new Date(n.createdAt).toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })}</div>
+                    </div>
+                    {!n.read && (
+                      <button onClick={() => markNotificationRead(n.id)} style={{ background: 'transparent', border: '1px solid rgba(91,196,214,0.4)', borderRadius: 6, color: 'rgba(91,196,214,0.9)', fontSize: 10, cursor: 'pointer', padding: '3px 7px', fontFamily: 'var(--font-body)', fontWeight: 600, flexShrink: 0, whiteSpace: 'nowrap' }}>Mark Read</button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
       <nav className="admin-sidebar-nav" style={{ flex: 1, padding: isNarrow ? '8px 10px' : '16px 12px', display: 'flex', flexDirection: isNarrow ? 'row' : 'column', gap: isNarrow ? '2px' : '0', overflowX: isNarrow ? 'auto' : 'hidden' }}>
         {navItems.map(({ key, icon, label }) => (
@@ -186,17 +232,46 @@ const OverviewPanel: React.FC<{ jobs: Job[]; technicians: Technician[]; onNav: (
 };
 
 // ─── JOBS PANEL ───────────────────────────────────────────────────────────────
-const JobsPanel: React.FC<{ jobs: Job[]; technicians: Technician[] }> = ({ jobs, technicians }) => {
-  const { updateJob, addNotification, users } = useStore();
+const JobsPanel: React.FC<{ jobs: Job[]; technicians: Technician[]; onNav?: (panel: string) => void }> = ({ jobs, technicians, onNav }) => {
+  const { updateJob, addNotification, users, addJob, serviceInvoices, billingStatements } = useStore();
   const [filter, setFilter] = useState('All');
   const [search, setSearch] = useState('');
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [assignTech, setAssignTech] = useState('');
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' | 'warning'; visible: boolean }>({ message: '', type: 'success', visible: false });
+  const [showNewBooking, setShowNewBooking] = useState(false);
+  const [newBooking, setNewBooking] = useState<{ clientId: string; serviceType: string; city: string; preferredDate: string; specialInstructions: string }>({ clientId: '', serviceType: 'Basic Cleaning', city: 'Biñan', preferredDate: '', specialInstructions: '' });
 
   const showToast = (msg: string, type: 'success' | 'error' | 'info' = 'success') => {
     setToast({ message: msg, type, visible: true });
     setTimeout(() => setToast(t => ({ ...t, visible: false })), 3000);
+  };
+
+  const handleCreateBooking = () => {
+    const client = users.find(u => u.id === newBooking.clientId);
+    if (!client || !newBooking.preferredDate) return;
+    addJob({
+      clientId: client.id,
+      clientName: `${client.firstName} ${client.lastName}`,
+      serviceType: newBooking.serviceType as Job['serviceType'],
+      acType: 'Split Type',
+      numberOfUnits: 1,
+      serviceAddress: client.address || '',
+      city: newBooking.city as Job['city'],
+      preferredDate: newBooking.preferredDate,
+      timeSlot: 'AM',
+      totalPrice: 0,
+      reservationFee: 0,
+      balanceDue: 0,
+      paymentStatus: 'Unpaid',
+      status: 'Pending',
+      specialInstructions: newBooking.specialInstructions,
+      requiresQuote: true,
+      isAdminCreated: true,
+    });
+    showToast(`Booking created for ${client.firstName} ${client.lastName}!`);
+    setShowNewBooking(false);
+    setNewBooking({ clientId: '', serviceType: 'Basic Cleaning', city: 'Biñan', preferredDate: '', specialInstructions: '' });
   };
 
   const statuses = ['All', 'Pending', 'Awaiting Payment', 'Confirmed', 'Active', 'Completed', 'Cancelled'];
@@ -269,6 +344,8 @@ const JobsPanel: React.FC<{ jobs: Job[]; technicians: Technician[] }> = ({ jobs,
           Job Queue
           <span style={{ marginLeft: 8, fontSize: 14, fontWeight: 600, color: 'var(--slate)' }}>({filtered.length})</span>
         </h2>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+        <Button variant="primary" size="sm" onClick={() => setShowNewBooking(true)}>➕ New Booking</Button>
         {/* Search */}
         <input
           type="text"
@@ -284,6 +361,7 @@ const JobsPanel: React.FC<{ jobs: Job[]; technicians: Technician[] }> = ({ jobs,
           onFocus={e => { e.target.style.borderColor = 'var(--polar)'; }}
           onBlur={e => { e.target.style.borderColor = 'var(--border)'; }}
         />
+        </div>
       </div>
       {/* Status filters */}
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16 }}>
@@ -343,6 +421,41 @@ const JobsPanel: React.FC<{ jobs: Job[]; technicians: Technician[] }> = ({ jobs,
         </table>
       </div>
 
+      {/* ── New Booking Modal ── */}
+      <Modal open={showNewBooking} onClose={() => setShowNewBooking(false)} title="New Admin Booking" maxWidth={480}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <p style={{ fontSize: 13, color: 'var(--slate)' }}>Create a booking on behalf of a client. A quote will be sent after the technician assesses on-site.</p>
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Client</div>
+            <select value={newBooking.clientId} onChange={e => setNewBooking(b => ({ ...b, clientId: e.target.value }))} style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1.5px solid var(--border)', fontFamily: 'var(--font-body)', fontSize: 14 }}>
+              <option value="">Select client…</option>
+              {users.filter(u => u.role === 'client').map(u => <option key={u.id} value={u.id}>{u.firstName} {u.lastName} — {u.phone}</option>)}
+            </select>
+          </div>
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Service Type</div>
+            <select value={newBooking.serviceType} onChange={e => setNewBooking(b => ({ ...b, serviceType: e.target.value }))} style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1.5px solid var(--border)', fontFamily: 'var(--font-body)', fontSize: 14 }}>
+              {(['Basic Cleaning', 'Deep Clean / Chemical Wash', 'AC Installation', 'Repair & Diagnostics', 'Refrigerant Recharge'] as const).map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>City</div>
+            <select value={newBooking.city} onChange={e => setNewBooking(b => ({ ...b, city: e.target.value }))} style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1.5px solid var(--border)', fontFamily: 'var(--font-body)', fontSize: 14 }}>
+              {(['Biñan', 'San Pedro', 'Sta. Rosa', 'Cabuyao', 'Muntinlupa', 'Carmona', 'GMA Cavite'] as const).map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+          <Input label="Preferred Date" type="date" value={newBooking.preferredDate} onChange={e => setNewBooking(b => ({ ...b, preferredDate: e.target.value }))} />
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--slate)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Special Instructions</div>
+            <textarea value={newBooking.specialInstructions} onChange={e => setNewBooking(b => ({ ...b, specialInstructions: e.target.value }))} placeholder="Access notes, unit locations, client requests…" rows={3} style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1.5px solid var(--border)', fontFamily: 'var(--font-body)', fontSize: 14, resize: 'vertical', outline: 'none' }} />
+          </div>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <Button variant="ghost" fullWidth onClick={() => setShowNewBooking(false)}>Cancel</Button>
+            <Button variant="primary" fullWidth onClick={handleCreateBooking} disabled={!newBooking.clientId || !newBooking.preferredDate}>Create Booking</Button>
+          </div>
+        </div>
+      </Modal>
+
       <Modal open={!!selectedJob} onClose={() => { setSelectedJob(null); setAssignTech(''); }} title={`Manage Job: ${selectedJob?.id}`} maxWidth={560}>
         {selectedJob && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -370,6 +483,43 @@ const JobsPanel: React.FC<{ jobs: Job[]; technicians: Technician[] }> = ({ jobs,
               ))}
             </div>
 
+            {/* ── Technician field notes (scope changes reported on-site) ── */}
+            {selectedJob.techFieldNotes && (
+              <div style={{ background: '#FFF7ED', border: '1px solid #FED7AA', borderRadius: 12, padding: 16 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 6, color: '#9A3412' }}>📋 Technician Field Notes</div>
+                <p style={{ fontSize: 13, color: 'var(--ink)', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{selectedJob.techFieldNotes}</p>
+              </div>
+            )}
+
+            {/* ── Related accounting records (invoices + billing for this job) ── */}
+            {(() => {
+              const relInvoices = (serviceInvoices ?? []).filter(i => i.jobId === selectedJob.id);
+              const relBilling = (billingStatements ?? []).filter(b => b.jobId === selectedJob.id);
+              if (relInvoices.length === 0 && relBilling.length === 0) return null;
+              return (
+                <div style={{ background: '#F0F9FF', border: '1px solid #BAE6FD', borderRadius: 12, padding: 16 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 10, color: '#0369A1' }}>🧾 Related Accounting Records</div>
+                  {relInvoices.map(inv => (
+                    <div key={inv.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13, marginBottom: 6 }}>
+                      <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--slate)' }}>{inv.id}</span>
+                      <span>Invoice · <strong>{inv.status}</strong></span>
+                    </div>
+                  ))}
+                  {relBilling.map(bill => (
+                    <div key={bill.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13, marginBottom: 6 }}>
+                      <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--slate)' }}>{bill.id}</span>
+                      <span>Billing · <strong>{bill.status}</strong></span>
+                    </div>
+                  ))}
+                  {onNav && (
+                    <Button variant="secondary" fullWidth size="sm" style={{ marginTop: 8 }} onClick={() => { setSelectedJob(null); onNav('accounting'); }}>
+                      Open in Accounting →
+                    </Button>
+                  )}
+                </div>
+              );
+            })()}
+
             {/* ── Confirm payment ── */}
             {selectedJob.paymentStatus === 'Awaiting Confirmation' && (
               <div style={{ background: '#FEF3C7', borderRadius: 12, padding: 16 }}>
@@ -379,10 +529,15 @@ const JobsPanel: React.FC<{ jobs: Job[]; technicians: Technician[] }> = ({ jobs,
               </div>
             )}
 
-            {/* ── Assign technician — only if no technician assigned yet ── */}
-            {!selectedJob.technicianId && !['Cancelled', 'Completed'].includes(selectedJob.status) && (
-              <div style={{ background: '#FEE2E2', borderRadius: 12, padding: 16 }}>
-                <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8, color: '#991B1B' }}>🔴 Assign Technician</div>
+            {/* ── Assign / Reassign technician ── */}
+            {!['Cancelled', 'Completed'].includes(selectedJob.status) && (
+              <div style={{ background: selectedJob.technicianId ? '#EFF6FF' : '#FEE2E2', borderRadius: 12, padding: 16 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8, color: selectedJob.technicianId ? '#1E40AF' : '#991B1B' }}>
+                  {selectedJob.technicianId ? '🔄 Reassign Technician' : '🔴 Assign Technician'}
+                </div>
+                {selectedJob.technicianName && (
+                  <div style={{ fontSize: 12, color: 'var(--slate)', marginBottom: 8 }}>Current: <strong>{selectedJob.technicianName}</strong></div>
+                )}
                 <Select
                   label=""
                   value={assignTech}
@@ -434,12 +589,12 @@ const JobsPanel: React.FC<{ jobs: Job[]; technicians: Technician[] }> = ({ jobs,
 const TechniciansPanel: React.FC<{ technicians: Technician[] }> = ({ technicians }) => {
   const { updateTechnician, addTechnician } = useStore();
   const [showAdd, setShowAdd] = useState(false);
-  const [form, setForm] = useState({ fullName: '', phone: '', type: 'Inhouse', skillLevel: 'Junior', coverageCities: ['Quezon City'] });
+  const [form, setForm] = useState({ fullName: '', phone: '', type: 'Outsourced', skillLevel: 'Junior', coverageCities: ['Biñan'] });
 
   const handleAdd = () => {
     addTechnician({ ...form as any, isAvailable: true, active: true, averageRating: 0, totalJobsCompleted: 0 });
     setShowAdd(false);
-    setForm({ fullName: '', phone: '', type: 'Inhouse', skillLevel: 'Junior', coverageCities: ['Quezon City'] });
+    setForm({ fullName: '', phone: '', type: 'Outsourced', skillLevel: 'Junior', coverageCities: ['Biñan'] });
   };
 
   return (
@@ -521,7 +676,10 @@ const FinancePanel: React.FC<{ jobs: Job[] }> = ({ jobs }) => {
 
   return (
     <div>
-      <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 24, fontWeight: 800, color: 'var(--midnight)', marginBottom: 24 }}>Finance Dashboard</h2>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
+        <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 24, fontWeight: 800, color: 'var(--midnight)' }}>Finance Dashboard</h2>
+        <Button variant="ghost" size="sm" onClick={() => exportJobsCSV(jobs)}>📥 Export Jobs CSV</Button>
+      </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16, marginBottom: 32 }}>
         <StatCard label="Total Revenue (Completed)" value={`₱${totalRevenue.toLocaleString()}`} icon="💰" accent="var(--polar)" />
         <StatCard label="Reservation Fees Collected" value={`₱${totalFees.toLocaleString()}`} icon="✅" accent="var(--verified)" />
@@ -562,6 +720,9 @@ const FinancePanel: React.FC<{ jobs: Job[] }> = ({ jobs }) => {
 
 // ─── REVIEWS PANEL ────────────────────────────────────────────────────────────
 const ReviewsPanel: React.FC<{ jobs: Job[] }> = ({ jobs }) => {
+  const { sendMessage, updateJob } = useStore();
+  const [reviewToast, setReviewToast] = useState<{ message: string; type: 'success' | 'error' | 'info' | 'warning'; visible: boolean }>({ message: '', type: 'success', visible: false });
+  const showReviewToast = (msg: string, type: 'success' | 'error' | 'info' | 'warning' = 'success') => { setReviewToast({ message: msg, type, visible: true }); setTimeout(() => setReviewToast(t => ({ ...t, visible: false })), 3000); };
   const reviewed = jobs.filter(j => j.rating);
   const avgRating = reviewed.length
     ? (reviewed.reduce((s, j) => s + (j.rating || 0), 0) / reviewed.length).toFixed(1)
@@ -571,6 +732,7 @@ const ReviewsPanel: React.FC<{ jobs: Job[] }> = ({ jobs }) => {
 
   return (
     <div>
+      <Toast {...reviewToast} />
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
         <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 24, fontWeight: 800, color: 'var(--midnight)' }}>Reviews</h2>
         <div style={{ fontFamily: 'var(--font-display)', fontSize: 32, fontWeight: 800, color: 'var(--caution)' }}>★ {avgRating}</div>
@@ -593,7 +755,19 @@ const ReviewsPanel: React.FC<{ jobs: Job[] }> = ({ jobs }) => {
             </div>
             <p style={{ fontSize: 14, color: 'var(--slate)', marginBottom: 12, fontStyle: 'italic' }}>&ldquo;{job.review || 'No comment'}&rdquo;</p>
             <div style={{ fontSize: 13, color: 'var(--ink)', fontWeight: 600 }}>{job.clientName}</div>
-            <div style={{ fontSize: 12, color: 'var(--slate)' }}>{job.serviceType} · {job.preferredDate}</div>
+            <div style={{ fontSize: 12, color: 'var(--slate)', marginBottom: (job.rating || 0) <= 3 ? 12 : 0 }}>{job.serviceType} · {job.preferredDate}</div>
+            {(job.rating || 0) <= 3 && (
+              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                <Button variant="ghost" size="sm" onClick={() => {
+                  sendMessage({ jobId: job.id, senderId: 'ADMIN001', senderName: 'ACT Admin', senderRole: 'admin', type: 'text', content: `Hi ${job.clientName.split(' ')[0]}! We noticed your recent experience with us didn't meet your expectations, and we sincerely apologize. Could you share more about what happened so we can make it right? Your feedback helps us improve. — ACT Team`, readBy: ['ADMIN001'] });
+                  showReviewToast('Message sent to client!');
+                }}>💬 Message Client</Button>
+                <Button variant="ghost" size="sm" onClick={() => {
+                  updateJob(job.id, { notes: (job.notes ? job.notes + ' | ' : '') + '⚠️ Low rating - under review' });
+                  showReviewToast('Job flagged for review.');
+                }}>🔖 Flag for Review</Button>
+              </div>
+            )}
           </Card>
         ))}
       </div>
@@ -658,10 +832,15 @@ const CatalogPanel: React.FC = () => {
 
 // ─── CLIENTS PANEL ────────────────────────────────────────────────────────────
 const ClientsPanel: React.FC = () => {
-  const { users, jobs } = useStore();
+  const { users, jobs, sendMessage } = useStore();
   const clients = users.filter(u => u.role === 'client');
+  const [selectedClient, setSelectedClient] = useState<(typeof users)[0] | null>(null);
+  const [clientToast, setClientToast] = useState<{ message: string; type: 'success' | 'error' | 'info' | 'warning'; visible: boolean }>({ message: '', type: 'success', visible: false });
+  const showClientToast = (msg: string, type: 'success' | 'error' | 'info' | 'warning' = 'success') => { setClientToast({ message: msg, type, visible: true }); setTimeout(() => setClientToast(t => ({ ...t, visible: false })), 3000); };
+
   return (
     <div>
+      <Toast {...clientToast} />
       <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 24, fontWeight: 800, color: 'var(--midnight)', marginBottom: 24 }}>Clients</h2>
       <div className="admin-table-wrap" style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', background: 'white', borderRadius: 16, overflow: 'hidden', border: '1px solid var(--mist)' }}>
@@ -676,7 +855,10 @@ const ClientsPanel: React.FC = () => {
             {clients.map(c => {
               const clientJobs = jobs.filter(j => j.clientId === c.id);
               return (
-                <tr key={c.id} style={{ borderTop: '1px solid var(--mist)' }}>
+                <tr key={c.id} style={{ borderTop: '1px solid var(--mist)', cursor: 'pointer' }}
+                  onClick={() => setSelectedClient(c)}
+                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--cloud)'}
+                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'white'}>
                   <td style={{ padding: '12px 16px', fontSize: 14, fontWeight: 600 }}>{c.firstName} {c.lastName}</td>
                   <td style={{ padding: '12px 16px', fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--slate)' }}>{c.phone}</td>
                   <td style={{ padding: '12px 16px', fontSize: 13, color: 'var(--slate)' }}>{c.email}</td>
@@ -691,17 +873,86 @@ const ClientsPanel: React.FC = () => {
           </tbody>
         </table>
       </div>
+
+      {/* Client Detail Modal */}
+      <Modal open={!!selectedClient} onClose={() => setSelectedClient(null)} title={selectedClient ? `${selectedClient.firstName} ${selectedClient.lastName}` : ''} maxWidth={560}>
+        {selectedClient && (() => {
+          const clientJobs = jobs.filter(j => j.clientId === selectedClient.id).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+          const totalSpent = clientJobs.filter(j => j.status === 'Completed').reduce((s, j) => s + j.totalPrice, 0);
+          const lastJob = clientJobs[0];
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {/* Client info */}
+              <div style={{ background: 'var(--cloud)', borderRadius: 12, padding: 14 }}>
+                {([
+                  ['Phone', selectedClient.phone],
+                  ['Email', selectedClient.email],
+                  ['City', selectedClient.city || '—'],
+                  ['Type', selectedClient.clientType || 'Residential'],
+                  ['Lead Source', (selectedClient as any).leadSource || '—'],
+                  ['Follow-up', selectedClient.followUpStatus || 'On track'],
+                ] as [string, string][]).map(([l, v]) => (
+                  <div key={l} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: 14 }}>
+                    <span style={{ color: 'var(--slate)' }}>{l}</span>
+                    <span style={{ fontWeight: 600 }}>{v}</span>
+                  </div>
+                ))}
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--mist)', fontSize: 14 }}>
+                  <span style={{ color: 'var(--slate)' }}>Total Spent</span>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 800, color: 'var(--verified)' }}>₱{totalSpent.toLocaleString()}</span>
+                </div>
+              </div>
+              {/* Job history */}
+              {clientJobs.length > 0 ? (
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--midnight)', marginBottom: 8 }}>Job History ({clientJobs.length})</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 260, overflowY: 'auto' }}>
+                    {clientJobs.map(j => (
+                      <div key={j.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', background: 'var(--cloud)', borderRadius: 10, fontSize: 13, flexWrap: 'wrap', gap: 6 }}>
+                        <div>
+                          <div style={{ fontWeight: 700, fontSize: 13 }}>{j.serviceType}</div>
+                          <div style={{ fontSize: 12, color: 'var(--slate)' }}>{j.preferredDate} · {j.city}</div>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 13 }}>₱{j.totalPrice.toLocaleString()}</div>
+                          <Badge label={j.status} size="sm" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <p style={{ fontSize: 13, color: 'var(--slate)', textAlign: 'center' }}>No jobs yet.</p>
+              )}
+              {/* Actions */}
+              <div style={{ display: 'flex', gap: 10 }}>
+                {lastJob && (
+                  <Button variant="secondary" fullWidth onClick={() => {
+                    sendMessage({ jobId: lastJob.id, senderId: 'ADMIN001', senderName: 'ACT Admin', senderRole: 'admin', type: 'text', content: `Hi ${selectedClient.firstName}! This is ACT Aircon Service. How can we help you today?`, readBy: ['ADMIN001'] });
+                    showClientToast('Message sent!');
+                    setSelectedClient(null);
+                  }}>💬 Message Client</Button>
+                )}
+                <Button variant="ghost" fullWidth onClick={() => setSelectedClient(null)}>Close</Button>
+              </div>
+            </div>
+          );
+        })()}
+      </Modal>
     </div>
   );
 };
 
 // ─── FOLLOW-UPS PANEL ─────────────────────────────────────────────────────────
 const FollowUpsPanel: React.FC = () => {
-  const { users } = useStore();
+  const { users, jobs, sendMessage, updateUser } = useStore();
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' | 'warning'; visible: boolean }>({ message: '', type: 'success', visible: false });
+  const showToast = (msg: string, type: 'success' | 'error' | 'info' | 'warning' = 'success') => { setToast({ message: msg, type, visible: true }); setTimeout(() => setToast(t => ({ ...t, visible: false })), 3000); };
   const today = new Date();
-  const overdueClients = users.filter(u => u.role === 'client' && u.nextDueDate && new Date(u.nextDueDate) <= today);
+  const overdueClients = users.filter(u => u.role === 'client' && u.nextDueDate && new Date(u.nextDueDate) <= today && u.followUpStatus !== 'Converted');
   return (
     <div>
+      <Toast {...toast} />
       <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 24, fontWeight: 800, color: 'var(--midnight)', marginBottom: 24 }}>Follow-ups</h2>
       {overdueClients.length === 0 ? (
         <Card style={{ textAlign: 'center', padding: '48px 24px' }}>
@@ -723,8 +974,14 @@ const FollowUpsPanel: React.FC = () => {
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 8 }}>
-                  <Button variant="secondary" size="sm">Send Reminder</Button>
-                  <Button variant="ghost" size="sm">Mark Converted</Button>
+                  <Button variant="secondary" size="sm" onClick={() => {
+                    const clientJobs = jobs.filter(j => j.clientId === c.id).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+                    const lastJob = clientJobs[0];
+                    const jobId = lastJob?.id || 'GENERAL';
+                    sendMessage({ jobId: jobId, senderId: 'ADMIN001', senderName: 'ACT Admin', senderRole: 'admin', type: 'text', content: `Hi ${c.firstName}! 👋 It's been a while since your last AC service. We wanted to check in — is everything running smoothly? If you're due for a maintenance check, we'd love to schedule one for you. Let us know! — ACT Team`, readBy: ['ADMIN001'] });
+                    showToast('Reminder sent via Messages!', 'success');
+                  }}>Send Reminder</Button>
+                  <Button variant="ghost" size="sm" onClick={() => { updateUser(c.id, { followUpStatus: 'Converted' }); showToast(`${c.firstName} marked as converted!`); }}>Mark Converted</Button>
                 </div>
               </Card>
             );
@@ -885,7 +1142,7 @@ const OperatorsPanel: React.FC = () => {
           <Input label="Last Name" value={form.lastName} onChange={e => setForm(f => ({ ...f, lastName: e.target.value }))} placeholder="dela Cruz" />
           <Input label="Email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder="juan@example.com" />
           <Input label="Phone" value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} placeholder="09171234567" />
-          <Input label="Assigned Cities (comma-separated)" value={form.assignedCities} onChange={e => setForm(f => ({ ...f, assignedCities: e.target.value }))} placeholder="Quezon City, Makati, Pasig" />
+          <Input label="Assigned Cities (comma-separated)" value={form.assignedCities} onChange={e => setForm(f => ({ ...f, assignedCities: e.target.value }))} placeholder="Biñan, San Pedro, Sta. Rosa" />
           <Button variant="primary" fullWidth onClick={handleAdd} disabled={!form.firstName || !form.lastName || !form.email}>Add Operator</Button>
         </div>
       </Modal>
@@ -1282,10 +1539,12 @@ const MessagesMonitorPanel: React.FC<{ jobs: Job[] }> = ({ jobs }) => {
 const AccountingPanel: React.FC = () => {
   const { serviceInvoices, billingStatements, jobs, users, adminReviewBilling, sendBillingToClient, markBillingPaid, sendServiceInvoice } = useStore();
   const [tab, setTab] = useState<'overview' | 'invoices' | 'billing' | 'history'>('overview');
+  const [exportStart, setExportStart] = useState('');
+  const [exportEnd, setExportEnd] = useState('');
   const [rejectId, setRejectId] = useState<string | null>(null);
   const [rejectNote, setRejectNote] = useState('');
   const [payingId, setPayingId] = useState<string | null>(null);
-  const [payMethod, setPayMethod] = useState<'GCash' | 'Cash' | 'Bank Transfer'>('Cash');
+  const [payMethod, setPayMethod] = useState<'GCash' | 'Cash' | 'Bank Transfer' | 'Check'>('Cash');
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' | 'warning'; visible: boolean }>({ message: '', type: 'success', visible: false });
   const showToast = (msg: string, type: 'success' | 'error' | 'info' | 'warning' = 'success') => { setToast({ message: msg, type, visible: true }); setTimeout(() => setToast(t => ({ ...t, visible: false })), 3000); };
 
@@ -1418,6 +1677,21 @@ const AccountingPanel: React.FC = () => {
       {/* PAYMENT HISTORY TAB */}
       {tab === 'history' && (
         <div>
+          {/* CSV Export Toolbar */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 16, padding: '12px 16px', background: 'white', borderRadius: 12, border: '1px solid var(--mist)' }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--midnight)', marginRight: 4 }}>Export:</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <label style={{ fontSize: 12, color: 'var(--slate)', fontWeight: 600 }}>From</label>
+              <input type="date" value={exportStart} onChange={e => setExportStart(e.target.value)} style={{ padding: '6px 10px', borderRadius: 8, border: '1.5px solid var(--border)', fontFamily: 'var(--font-body)', fontSize: 13 }} />
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <label style={{ fontSize: 12, color: 'var(--slate)', fontWeight: 600 }}>To</label>
+              <input type="date" value={exportEnd} onChange={e => setExportEnd(e.target.value)} style={{ padding: '6px 10px', borderRadius: 8, border: '1.5px solid var(--border)', fontFamily: 'var(--font-body)', fontSize: 13 }} />
+            </div>
+            <Button variant="secondary" size="sm" onClick={() => exportBillingCSV(billingStatements, exportStart || undefined, exportEnd || undefined)}>📥 Export Payments CSV</Button>
+            <Button variant="ghost" size="sm" onClick={() => exportBillingCSV(billingStatements, exportStart || undefined, exportEnd || undefined, true)}>📥 All Billing (incl. Unpaid)</Button>
+            <Button variant="ghost" size="sm" onClick={() => exportMonthlySummaryCSV(billingStatements, jobs)}>📊 Monthly Summary CSV</Button>
+          </div>
           {paidBilling.length === 0 ? (
             <Card style={{ textAlign: 'center', padding: '40px 24px' }}>
               <div style={{ fontSize: 40, marginBottom: 10 }}>💚</div>
@@ -1442,7 +1716,7 @@ const AccountingPanel: React.FC = () => {
                         <td style={{ padding: '10px 12px', fontSize: 14, fontWeight: 600 }}>{b.clientName}</td>
                         <td style={{ padding: '10px 12px', fontSize: 13, color: 'var(--slate)' }}>{b.operatorName}</td>
                         <td style={{ padding: '10px 12px', fontFamily: 'var(--font-mono)', fontSize: 13 }}>₱{b.totalAmount.toLocaleString()}</td>
-                        <td style={{ padding: '10px 12px', fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--verified)', fontWeight: 700 }}>₱{b.totalAmount.toLocaleString()}</td>
+                        <td style={{ padding: '10px 12px', fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--verified)', fontWeight: 700 }}>₱{(b.amountPaidAtClose !== undefined ? b.amountPaidAtClose : b.amountDue).toLocaleString()}</td>
                         <td style={{ padding: '10px 12px', fontSize: 13 }}>{b.paymentMethod}</td>
                         <td style={{ padding: '10px 12px', fontSize: 13, color: 'var(--slate)' }}>{b.paidAt ? new Date(b.paidAt).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</td>
                       </tr>
@@ -1482,10 +1756,10 @@ const AccountingPanel: React.FC = () => {
       <Modal open={!!payingId} onClose={() => setPayingId(null)} title="Mark as Paid" maxWidth={360}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <p style={{ fontSize: 14, color: 'var(--slate)' }}>Confirm the payment method used by the client.</p>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
-            {(['GCash', 'Cash', 'Bank Transfer'] as const).map(m => (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+            {(['GCash', 'Cash', 'Bank Transfer', 'Check'] as const).map(m => (
               <button key={m} onClick={() => setPayMethod(m)} style={{ padding: '12px 8px', borderRadius: 10, border: `2px solid ${payMethod === m ? 'var(--verified)' : 'var(--mist)'}`, background: payMethod === m ? 'var(--verified-bg)' : 'white', cursor: 'pointer', fontFamily: 'var(--font-body)', fontSize: 12, fontWeight: 700, color: payMethod === m ? 'var(--verified)' : 'var(--ink)' }}>
-                {m === 'GCash' ? '📱' : m === 'Cash' ? '💵' : '🏦'}<br />{m}
+                {m === 'GCash' ? '📱' : m === 'Cash' ? '💵' : m === 'Check' ? '📝' : '🏦'}<br />{m}
               </button>
             ))}
           </div>
@@ -1532,7 +1806,7 @@ const AdminDashboard: React.FC = () => {
   const renderPanel = () => {
     switch (activePanel) {
       case 'dashboard': return <OverviewPanel jobs={jobs} technicians={technicians} onNav={setActivePanel} />;
-      case 'jobs': return <JobsPanel jobs={jobs} technicians={technicians} />;
+      case 'jobs': return <JobsPanel jobs={jobs} technicians={technicians} onNav={setActivePanel} />;
       case 'technicians': return <TechniciansPanel technicians={technicians} />;
       case 'operators': return <OperatorsPanel />;
       case 'schedule': return <SchedulePanel jobs={jobs} technicians={technicians} />;

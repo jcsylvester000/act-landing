@@ -15,9 +15,9 @@ const AboutPage: React.FC = () => {
   ];
 
   const milestones = [
-    { year: '2018', event: 'ACT Founded in Quezon City' },
-    { year: '2019', event: 'DICT Accreditation Achieved' },
-    { year: '2020', event: 'Expanded to 6 Metro Manila cities' },
+    { year: '2018', event: 'ACT Founded in Biñan, Laguna' },
+    { year: '2019', event: 'TESDA Accreditation Achieved' },
+    { year: '2020', event: 'Expanded across South Metro Manila & South Laguna' },
     { year: '2021', event: '1,000 units serviced milestone' },
     { year: '2022', event: 'Launched digital service certificates' },
     { year: '2023', event: '5,000+ satisfied clients' },

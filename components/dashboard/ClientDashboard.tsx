@@ -10,7 +10,7 @@ import BillingCard from '@/components/billing/BillingCard';
 
 const ClientDashboard: React.FC = () => {
   const router = useRouter();
-  const { currentUser, jobs, updateJob, addNotification, messages, sendMessage, markMessagesRead, respondToCalendarInvite, serviceInvoices, billingStatements, respondToServiceInvoice } = useStore();
+  const { currentUser, jobs, updateJob, updateUser, addNotification, messages, sendMessage, markMessagesRead, respondToCalendarInvite, serviceInvoices, billingStatements, respondToServiceInvoice } = useStore();
 
   // ─── ALL STATE (hooks first) ──────────────────────────────────────────────
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
@@ -28,6 +28,7 @@ const ClientDashboard: React.FC = () => {
   const [filterStatus, setFilterStatus] = useState('All');
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' | 'warning'; visible: boolean }>({ message: '', type: 'success', visible: false });
   const [authChecked, setAuthChecked] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
 
   useEffect(() => {
     if (!currentUser) {
@@ -60,7 +61,7 @@ const ClientDashboard: React.FC = () => {
   const completedJobs = myJobs.filter(j => j.status === 'Completed');
   const pendingJobs = myJobs.filter(j => ['Pending', 'Awaiting Payment'].includes(j.status));
   const totalSpent = completedJobs.reduce((sum, j) => sum + j.totalPrice, 0);
-  const cancellableStatuses = ['Pending', 'Awaiting Payment'];
+  const cancellableStatuses = ['Pending', 'Awaiting Payment', 'Confirmed']; // Confirmed cancellable before tech dispatches
 
   const statuses = ['All', 'Pending', 'Awaiting Payment', 'Confirmed', 'Active', 'Completed', 'Cancelled'];
   const filteredJobs = filterStatus === 'All' ? myJobs : myJobs.filter(j => j.status === filterStatus);
@@ -74,21 +75,30 @@ const ClientDashboard: React.FC = () => {
     if (!reviewJob) return;
     updateJob(reviewJob.id, { rating, review: reviewText });
     addNotification({ userId: currentUser.id, jobId: reviewJob.id, message: 'Thank you for your review!', type: 'success', read: false });
+    const newDue = new Date(reviewJob.preferredDate || new Date());
+    newDue.setDate(newDue.getDate() + (reviewJob.serviceType === 'Basic Cleaning' ? 90 : 180));
+    updateUser(currentUser.id, {
+      nextDueDate: newDue.toISOString().split('T')[0],
+      lastServiceDate: reviewJob.preferredDate,
+      preferredTechnicianId: reviewJob.technicianId,
+      preferredTechnicianName: reviewJob.technicianName,
+    });
     setReviewJob(null); setReviewText(''); setRating(5);
     showToast('Review submitted! Thank you.', 'success');
   };
 
   const handleCancelJob = (job: Job) => {
-    updateJob(job.id, { status: 'Cancelled', cancellationReason: 'Cancelled by client' });
+    updateJob(job.id, { status: 'Cancelled', cancellationReason: cancelReason || 'Cancelled by client' });
     addNotification({ userId: currentUser.id, jobId: job.id, message: `Booking ${job.id} has been cancelled.`, type: 'info', read: false });
     setCancelConfirmJob(null);
+    setCancelReason('');
     setSelectedJob(null);
     showToast('Booking cancelled successfully.', 'info');
   };
 
   const handleRebook = (job: Job) => {
     setSelectedJob(null);
-    router.push('/book');
+    router.push(`/book?st=${encodeURIComponent(job.serviceType)}&at=${encodeURIComponent(job.acType)}&units=${job.numberOfUnits}&techId=${job.technicianId || ''}`);
   };
 
   // ─── INVOICE / BILLING HELPERS ──────────────────────────────────────────
@@ -122,9 +132,7 @@ const ClientDashboard: React.FC = () => {
   };
 
   // ─── MESSAGING HELPERS ──────────────────────────────────────────────────
-  const jobsWithMessages = myJobs.filter(j =>
-    ['Confirmed', 'Active', 'Completed'].includes(j.status) && j.operatorId
-  );
+  const jobsWithMessages = myJobs.filter(j => j.operatorId || j.status === 'Pending'); // show messages for Pending even without operator
   const getJobThread = (jobId: string): Message[] =>
     (messages ?? []).filter(m => m.jobId === jobId).sort((a, b) =>
       new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
@@ -279,7 +287,7 @@ const ClientDashboard: React.FC = () => {
         )}
 
         {/* ─── SERVICE DUE REMINDER ─── */}
-        {daysUntilDue !== null && daysUntilDue <= 14 && !activeJob && (
+        {daysUntilDue !== null && daysUntilDue <= 14 && (
           <div style={{
             background: daysUntilDue <= 0 ? 'var(--alert-bg)' : 'var(--caution-bg)',
             border: `1.5px solid ${daysUntilDue <= 0 ? 'rgba(229,72,77,0.3)' : 'rgba(245,166,35,0.3)'}`,
@@ -389,6 +397,15 @@ const ClientDashboard: React.FC = () => {
                           <div style={{ marginTop: 4, display: 'flex', gap: 2 }}>
                             {[1,2,3,4,5].map(s => <span key={s} style={{ fontSize: 11, color: s <= job.rating! ? '#F5A623' : 'var(--mist)' }}>★</span>)}
                           </div>
+                        ) : job.status === 'Completed' && !job.rating ? (
+                          <div style={{ marginTop: 6 }}>
+                            <button
+                              onClick={e => { e.stopPropagation(); setReviewJob(job); }}
+                              style={{ fontSize: 11, fontWeight: 700, color: 'var(--polar)', background: 'var(--breeze)', border: '1px solid var(--mist)', borderRadius: 99, padding: '3px 10px', cursor: 'pointer', fontFamily: 'var(--font-body)' }}
+                            >
+                              ⭐ Leave a Review
+                            </button>
+                          </div>
                         ) : job.status !== 'Cancelled' ? (
                           <div style={{ marginTop: 4, fontSize: 11, color: 'var(--slate)' }}>{statusNote[job.status]}</div>
                         ) : null}
@@ -436,6 +453,7 @@ const ClientDashboard: React.FC = () => {
               { label: 'Address', value: `${selectedJob.serviceAddress}, ${selectedJob.city}` },
               { label: 'Scheduled', value: `${selectedJob.preferredDate} · ${selectedJob.timeSlot}` },
               ...(selectedJob.technicianName ? [{ label: 'Technician', value: `${selectedJob.technicianName} · ACT Accredited` }] : []),
+              ...(selectedJob.preferredPaymentMethod ? [{ label: 'Payment Method', value: selectedJob.preferredPaymentMethod }] : []),
               ...(selectedJob.specialInstructions ? [{ label: 'Notes', value: selectedJob.specialInstructions }] : []),
             ].map(r => (
               <div key={r.label} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid var(--border)', gap: 12 }}>
@@ -469,8 +487,8 @@ const ClientDashboard: React.FC = () => {
                 </Button>
               )}
 
-              {/* Message operator — for confirmed/active jobs */}
-              {['Confirmed', 'Active'].includes(selectedJob.status) && selectedJob.operatorId && (
+              {/* Message operator — for pending/confirmed/active jobs */}
+              {['Pending', 'Confirmed', 'Active'].includes(selectedJob.status) && (
                 <Button variant="secondary" fullWidth onClick={() => { handleOpenMsgJob(selectedJob); setSelectedJob(null); }}>
                   💬 Message Your Operator
                 </Button>
@@ -497,19 +515,33 @@ const ClientDashboard: React.FC = () => {
       </Modal>
 
       {/* ─── CANCEL CONFIRM MODAL ─── */}
-      <Modal open={!!cancelConfirmJob} onClose={() => setCancelConfirmJob(null)} title="Cancel Booking?" maxWidth={440}>
+      <Modal open={!!cancelConfirmJob} onClose={() => { setCancelConfirmJob(null); setCancelReason(''); }} title="Cancel Booking?" maxWidth={440}>
         {cancelConfirmJob && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div style={{ background: 'var(--alert-bg)', borderRadius: 12, padding: 16, border: '1px solid rgba(229,72,77,0.2)' }}>
               <p style={{ fontSize: 14, color: 'var(--ink)', lineHeight: 1.7 }}>
                 Are you sure you want to cancel <strong>{cancelConfirmJob.serviceType}</strong> on <strong>{cancelConfirmJob.preferredDate}</strong>?
               </p>
-              <p style={{ fontSize: 13, color: 'var(--slate)', marginTop: 8 }}>
-                ⚠️ The reservation fee of <strong style={{ fontFamily: 'var(--font-mono)' }}>₱{cancelConfirmJob.reservationFee.toLocaleString()}</strong> is non-refundable per ACT&apos;s cancellation policy.
-              </p>
+              {cancelConfirmJob.reservationFee > 0 && (
+                <p style={{ fontSize: 13, color: 'var(--slate)', marginTop: 8 }}>
+                  ⚠️ The reservation fee of <strong style={{ fontFamily: 'var(--font-mono)' }}>₱{cancelConfirmJob.reservationFee.toLocaleString()}</strong> is non-refundable per ACT&apos;s cancellation policy.
+                </p>
+              )}
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 700, marginBottom: 8, color: 'var(--ink)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Reason for Cancellation (optional)</label>
+              <textarea
+                value={cancelReason}
+                onChange={e => setCancelReason(e.target.value)}
+                placeholder="e.g. Change of plans, rescheduling to a later date..."
+                rows={3}
+                style={{ width: '100%', padding: '12px 14px', border: '1.5px solid var(--border)', borderRadius: 12, fontFamily: 'var(--font-body)', fontSize: 14, resize: 'none', outline: 'none' }}
+                onFocus={e => { e.target.style.borderColor = 'var(--alert)'; }}
+                onBlur={e => { e.target.style.borderColor = 'var(--border)'; }}
+              />
             </div>
             <div style={{ display: 'flex', gap: 10 }}>
-              <Button variant="ghost" fullWidth onClick={() => setCancelConfirmJob(null)}>Keep Booking</Button>
+              <Button variant="ghost" fullWidth onClick={() => { setCancelConfirmJob(null); setCancelReason(''); }}>Keep Booking</Button>
               <Button variant="danger" fullWidth onClick={() => handleCancelJob(cancelConfirmJob)}>Yes, Cancel</Button>
             </div>
           </div>

@@ -1,0 +1,417 @@
+// ACT — Aircon Cleaning & Technician · Prisma Schema
+// Eleven-entity data model from the ACT workflow material.
+// Connect later to Neon.tech Postgres:
+//   DATABASE_URL      → pooled connection string (app runtime)
+//   DIRECT_URL        → direct connection string (migrations)
+// Both live in .env (never committed). See .env.example.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─── ENUMS ────────────────────────────────────────────────────────────────────
+
+enum Role {
+  client
+  operator
+  admin
+}
+
+enum CoverageCity {
+  Binan        @map("Biñan")
+  SanPedro     @map("San Pedro")
+  StaRosa      @map("Sta. Rosa")
+  Cabuyao      @map("Cabuyao")
+  Muntinlupa   @map("Muntinlupa")
+  Carmona      @map("Carmona")
+  GMACavite    @map("GMA Cavite")
+}
+
+enum ServiceType {
+  BasicCleaning       @map("Basic Cleaning")
+  DeepClean           @map("Deep Clean / Chemical Wash")
+  ACInstallation      @map("AC Installation")
+  RepairDiagnostics   @map("Repair & Diagnostics")
+  RefrigerantRecharge @map("Refrigerant Recharge")
+}
+
+enum JobStatus {
+  Pending
+  AwaitingPayment @map("Awaiting Payment")
+  Confirmed
+  Active
+  Completed
+  Cancelled
+}
+
+enum PaymentStatus {
+  Unpaid
+  AwaitingConfirmation @map("Awaiting Confirmation")
+  ReservationPaid      @map("Reservation paid")
+  FullyPaid            @map("Fully paid")
+  Refunded
+}
+
+enum PaymentMethod {
+  GCash
+  Cash
+  BankTransfer @map("Bank Transfer")
+  Check
+}
+
+enum TimeSlot {
+  AM
+  PM
+  Flexible
+}
+
+enum TechnicianType {
+  Inhouse
+  Outsourced
+}
+
+enum SkillLevel {
+  Junior
+  Senior
+  Master
+}
+
+enum AssignmentStatus {
+  Assigned
+  Accepted
+  Declined
+  Reassigned
+  Completed
+}
+
+enum FollowUpStatus {
+  Due
+  Contacted
+  Scheduled
+  Converted
+  Dismissed
+}
+
+enum NotificationType {
+  info
+  success
+  warning
+  error
+}
+
+enum InvoiceStatus {
+  Draft
+  Sent
+  ViewedByClient    @map("Viewed by Client")
+  Accepted
+  RevisionRequested @map("Revision Requested")
+  CancelledByClient @map("Cancelled by Client")
+}
+
+enum BillingStatus {
+  Draft
+  SubmittedToAdmin @map("Submitted to Admin")
+  AdminApproved    @map("Admin Approved")
+  AdminRejected    @map("Admin Rejected")
+  SentToClient     @map("Sent to Client")
+  Paid
+  Overdue
+  Disputed
+}
+
+// ─── 1. CLIENTS (and all platform users) ─────────────────────────────────────
+
+model Client {
+  id                      String    @id @default(cuid())
+  role                    Role      @default(client)
+  firstName               String
+  lastName                String
+  email                   String    @unique
+  passwordHash            String
+  phone                   String
+  address                 String?
+  city                    CoverageCity?
+  leadSource              String?
+  preferredTechnicianId   String?
+  preferredTechnician     Technician? @relation("PreferredTech", fields: [preferredTechnicianId], references: [id])
+  nextDueDate             DateTime?
+  followUpStatus          FollowUpStatus?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+
+  jobs                    Job[]
+  notifications           Notification[]
+  reviews                 Review[]
+  followUps               FollowUp[]
+  serviceHistory          ServiceHistory[]
+
+  @@index([email])
+  @@index([role])
+  @@map("clients")
+}
+
+// ─── 2. TECHNICIANS ───────────────────────────────────────────────────────────
+
+model Technician {
+  id                 String         @id @default(cuid())
+  fullName           String
+  phone              String
+  type               TechnicianType @default(Outsourced)
+  skillLevel         SkillLevel     @default(Junior)
+  coverageCities     CoverageCity[]
+  isAvailable        Boolean        @default(true)
+  active             Boolean        @default(true)
+  averageRating      Decimal        @default(0) @db.Decimal(3, 2)
+  totalJobsCompleted Int            @default(0)
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  assignments        JobAssignment[]
+  schedule           TechnicianSchedule[]
+  preferredBy        Client[]        @relation("PreferredTech")
+  serviceHistory     ServiceHistory[]
+
+  @@map("technicians")
+}
+
+// ─── 3. SERVICE CATALOG ───────────────────────────────────────────────────────
+
+model ServiceCatalogItem {
+  id              String      @id @default(cuid())
+  serviceType     ServiceType @unique
+  name            String
+  description     String?
+  // Pricing: fixed per-unit for cleans; quote-required services keep null
+  pricePerUnitWindow Decimal? @db.Decimal(10, 2)
+  pricePerUnitSplit  Decimal? @db.Decimal(10, 2)
+  reservationFee     Decimal  @default(0) @db.Decimal(10, 2)
+  requiresQuote      Boolean  @default(false)
+  active             Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@map("service_catalog")
+}
+
+// ─── 4. JOBS ──────────────────────────────────────────────────────────────────
+
+model Job {
+  id                     String        @id @default(cuid())
+  clientId               String
+  client                 Client        @relation(fields: [clientId], references: [id])
+  serviceType            ServiceType
+  acType                 String
+  numberOfUnits          Int           @default(1)
+  serviceAddress         String
+  city                   CoverageCity
+  preferredDate          DateTime      @db.Date
+  timeSlot               TimeSlot      @default(AM)
+  // Money: total = perUnitPrice × numberOfUnits (fixed services) or customPrice (quoted)
+  totalPrice             Decimal       @db.Decimal(10, 2)
+  customPrice            Decimal?      @db.Decimal(10, 2)
+  requiresQuote          Boolean       @default(false)
+  reservationFee         Decimal       @default(0) @db.Decimal(10, 2)
+  balanceDue             Decimal       @db.Decimal(10, 2)
+  paymentStatus          PaymentStatus @default(Unpaid)
+  preferredPaymentMethod PaymentMethod?
+  status                 JobStatus     @default(Pending)
+  specialInstructions    String?
+  techFieldNotes         String?
+  cancelReason           String?
+  isAdminCreated         Boolean       @default(false)
+  preferredTechnicianId  String?
+  rating                 Int?
+  createdAt              DateTime      @default(now())
+  updatedAt              DateTime      @updatedAt
+
+  assignments            JobAssignment[]
+  notifications          Notification[]
+  reviews                Review[]
+  invoices               Invoice[]
+  serviceHistory         ServiceHistory[]
+  followUps              FollowUp[]
+  messages               Message[]
+
+  @@index([clientId, status])
+  @@index([status])
+  @@index([preferredDate])
+  @@map("jobs")
+}
+
+// ─── 5. JOB ASSIGNMENTS ───────────────────────────────────────────────────────
+
+model JobAssignment {
+  id           String           @id @default(cuid())
+  jobId        String
+  job          Job              @relation(fields: [jobId], references: [id])
+  technicianId String
+  technician   Technician       @relation(fields: [technicianId], references: [id])
+  assignedById String?
+  status       AssignmentStatus @default(Assigned)
+  assignedAt   DateTime         @default(now())
+  respondedAt  DateTime?
+  notes        String?
+
+  @@index([jobId])
+  @@index([technicianId])
+  @@map("job_assignments")
+}
+
+// ─── 6. TECHNICIAN SCHEDULE ───────────────────────────────────────────────────
+
+model TechnicianSchedule {
+  id           String     @id @default(cuid())
+  technicianId String
+  technician   Technician @relation(fields: [technicianId], references: [id])
+  date         DateTime   @db.Date
+  timeSlot     TimeSlot
+  jobId        String?
+  isBlocked    Boolean    @default(false)
+  note         String?
+  createdAt    DateTime   @default(now())
+
+  @@unique([technicianId, date, timeSlot])
+  @@index([date])
+  @@map("technician_schedule")
+}
+
+// ─── 7. FOLLOW-UPS ────────────────────────────────────────────────────────────
+
+model FollowUp {
+  id          String         @id @default(cuid())
+  clientId    String
+  client      Client         @relation(fields: [clientId], references: [id])
+  jobId       String?
+  job         Job?           @relation(fields: [jobId], references: [id])
+  dueDate     DateTime       @db.Date
+  status      FollowUpStatus @default(Due)
+  channel     String?
+  note        String?
+  contactedAt DateTime?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@index([status, dueDate])
+  @@map("follow_ups")
+}
+
+// ─── 8. SERVICE HISTORY ───────────────────────────────────────────────────────
+
+model ServiceHistory {
+  id            String      @id @default(cuid())
+  clientId      String
+  client        Client      @relation(fields: [clientId], references: [id])
+  jobId         String      @unique
+  job           Job         @relation(fields: [jobId], references: [id])
+  technicianId  String?
+  technician    Technician? @relation(fields: [technicianId], references: [id])
+  serviceType   ServiceType
+  completedAt   DateTime
+  unitsServiced Int
+  amountPaid    Decimal     @db.Decimal(10, 2)
+  workNotes     String?
+  createdAt     DateTime    @default(now())
+
+  @@index([clientId, completedAt])
+  @@map("service_history")
+}
+
+// ─── 9. NOTIFICATIONS ─────────────────────────────────────────────────────────
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  user      Client           @relation(fields: [userId], references: [id])
+  jobId     String?
+  job       Job?             @relation(fields: [jobId], references: [id])
+  message   String
+  type      NotificationType @default(info)
+  read      Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  @@index([userId, read])
+  @@map("notifications")
+}
+
+// ─── 10. REVIEWS ──────────────────────────────────────────────────────────────
+
+model Review {
+  id           String   @id @default(cuid())
+  jobId        String   @unique
+  job          Job      @relation(fields: [jobId], references: [id])
+  clientId     String
+  client       Client   @relation(fields: [clientId], references: [id])
+  technicianId String?
+  rating       Int      @db.SmallInt
+  comment      String?
+  flagged      Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  @@index([rating])
+  @@map("reviews")
+}
+
+// ─── 11. INVOICES (pre-service quotes + post-service billing) ─────────────────
+
+model Invoice {
+  id                 String         @id @default(cuid())
+  jobId              String
+  job                Job            @relation(fields: [jobId], references: [id])
+  kind               String         // "service_invoice" (pre-service quote) | "billing_statement" (post-service)
+  clientId           String
+  operatorId         String?
+  technicianName     String?
+  lineItems          Json           // [{ id, description, category, quantity, unitPrice, amount }]
+  subtotal           Decimal        @db.Decimal(10, 2)
+  reservationFeePaid Decimal        @default(0) @db.Decimal(10, 2)
+  totalAmount        Decimal        @db.Decimal(10, 2)
+  amountDue          Decimal        @db.Decimal(10, 2)
+  amountPaidAtClose  Decimal?       @db.Decimal(10, 2)
+  invoiceStatus      InvoiceStatus?
+  billingStatus      BillingStatus?
+  paymentMethod      PaymentMethod?
+  receiptNumber      String?
+  checkNumber        String?
+  revisionCount      Int            @default(0)
+  notes              String?
+  workNotes          String?
+  adminNotes         String?
+  internalNotes      String?
+  dueDate            DateTime?      @db.Date
+  sentAt             DateTime?
+  sentToClientAt     DateTime?
+  adminReviewedAt    DateTime?
+  revisedAt          DateTime?
+  paidAt             DateTime?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  @@index([jobId])
+  @@index([kind])
+  @@index([billingStatus])
+  @@map("invoices")
+}
+
+// ─── MESSAGES (in-platform comms threads, per job) ────────────────────────────
+
+model Message {
+  id        String   @id @default(cuid())
+  jobId     String
+  job       Job      @relation(fields: [jobId], references: [id])
+  senderId  String
+  senderRole Role
+  body      String
+  kind      String   @default("text") // text | calendar_invite | system
+  meta      Json?
+  readBy    String[]
+  createdAt DateTime @default(now())
+
+  @@index([jobId, createdAt])
+  @@map("messages")
+}

@@ -55,7 +55,7 @@ const ContactPage: React.FC = () => {
               {[
                 { icon: '📱', label: 'WhatsApp / Viber', value: '+63 9XX XXX XXXX', sub: 'Mon–Sat, 8AM–6PM' },
                 { icon: '📧', label: 'Email', value: 'hello@act.ph', sub: 'Responses within 24 hours' },
-                { icon: '📍', label: 'Office', value: 'Quezon City, Metro Manila', sub: 'By appointment only' },
+                { icon: '📍', label: 'Office', value: 'Biñan, Laguna', sub: 'By appointment only' },
                 { icon: '⏰', label: 'Service Hours', value: 'Monday – Saturday', sub: '8:00 AM – 6:00 PM' },
               ].map(item => (
                 <div key={item.label} style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>

@@ -1,8 +1,9 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import type { ServiceInvoice, InvoiceStatus } from '@/store';
 import { Button, Badge } from '@/components/ui';
+import { printDocument, PrintRoot } from './PrintExport';
 
 // ─── STATUS CONFIG ────────────────────────────────────────────────────────────
 const statusConfig: Record<InvoiceStatus, { bg: string; color: string; icon: string }> = {
@@ -29,6 +30,15 @@ const InvoiceCard: React.FC<Props> = ({
   invoice, viewerRole, onAccept, onRequestRevision, onCancel, onSend, onEdit, compact = false,
 }) => {
   const sc = statusConfig[invoice.status] ?? statusConfig['Draft'];
+  const [showPrint, setShowPrint] = useState(false);
+
+  const handlePrint = () => {
+    setShowPrint(true);
+    setTimeout(() => {
+      printDocument(invoice.id);
+      setTimeout(() => setShowPrint(false), 1000);
+    }, 100);
+  };
 
   return (
     <div style={{ background: 'white', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden', boxShadow: 'var(--shadow-xs)' }}>
@@ -39,7 +49,7 @@ const InvoiceCard: React.FC<Props> = ({
             <div style={{ fontSize: 11, fontWeight: 800, color: 'rgba(255,255,255,0.5)', letterSpacing: '1px', textTransform: 'uppercase', marginBottom: 4 }}>
               Service Invoice
             </div>
-            <div style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 800 }}>{invoice.id}</div>
+            <div style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 800 }}>{invoice.id}{invoice.revisionCount && invoice.revisionCount > 0 ? ` · Rev.${invoice.revisionCount}` : ''}</div>
             <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.65)', marginTop: 3 }}>
               Job: {invoice.jobId} · {invoice.clientName}
             </div>
@@ -173,8 +183,17 @@ const InvoiceCard: React.FC<Props> = ({
               ✅ You accepted this invoice
             </div>
           )}
+
+          {/* Print / PDF — available to all roles once invoice is sent or beyond */}
+          {invoice.status !== 'Draft' && (
+            <Button variant="ghost" size="sm" onClick={handlePrint} style={{ marginLeft: 'auto' }}>
+              🖨️ PDF
+            </Button>
+          )}
         </div>
       </div>
+
+      {showPrint && <PrintRoot activeInvoice={invoice} />}
     </div>
   );
 };
