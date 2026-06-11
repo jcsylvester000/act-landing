@@ -42,6 +42,13 @@ const ClientDashboard: React.FC = () => {
   // 7-day chat retention: move expired live messages into JSON archives
   useEffect(() => { archiveExpiredChats(); }, [archiveExpiredChats]);
 
+  // Deep-link: /dashboard#chat-history scrolls to the chat history section
+  useEffect(() => {
+    if (authChecked && typeof window !== 'undefined' && window.location.hash === '#chat-history') {
+      setTimeout(() => document.getElementById('chat-history')?.scrollIntoView({ behavior: 'smooth' }), 300);
+    }
+  }, [authChecked]);
+
   const showToast = (message: string, type: 'success' | 'error' | 'info' | 'warning' = 'success') => {
     setToast({ message, type, visible: true });
     setTimeout(() => setToast(t => ({ ...t, visible: false })), 3000);
@@ -110,6 +117,10 @@ const ClientDashboard: React.FC = () => {
   const myBilling = (billingStatements ?? []).filter(b => b.clientId === currentUser?.id);
   const pendingInvoices = myInvoices.filter(i => i.status === 'Sent' || i.status === 'Viewed by Client');
   const pendingBilling = myBilling.filter(b => b.status === 'Sent to Client' && b.amountDue > 0);
+  // Client-visible records: never show operator/admin internal drafts
+  const visibleInvoices = myInvoices.filter(i => i.status !== 'Draft');
+  const visibleBilling = myBilling.filter(b => ['Sent to Client', 'Paid', 'Overdue', 'Disputed'].includes(b.status));
+  const billingInPrep = completedJobs.filter(j => !myBilling.some(b => b.jobId === j.id && ['Sent to Client', 'Paid', 'Overdue', 'Disputed'].includes(b.status)));
   const totalFinancialAlerts = pendingInvoices.length + pendingBilling.length;
 
   const handleInvoiceAccept = (invoiceId: string) => {
@@ -586,7 +597,7 @@ const ClientDashboard: React.FC = () => {
       </Modal>
 
       {/* ─── INVOICES SECTION ─── */}
-      {myInvoices.length > 0 && (
+      {visibleInvoices.length > 0 && (
         <div className="dashboard-body" style={{ maxWidth: 1100, margin: '0 auto', padding: '0 24px 24px' }}>
           <div style={{ background: 'var(--white)', borderRadius: 20, border: '1px solid var(--border)', overflow: 'hidden', boxShadow: 'var(--shadow-xs)' }}>
             <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
@@ -599,7 +610,7 @@ const ClientDashboard: React.FC = () => {
               <div style={{ fontSize: 13, color: 'var(--slate)' }}>Formal quotes from your operator</div>
             </div>
             <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
-              {myInvoices.map(inv => (
+              {visibleInvoices.map(inv => (
                 <InvoiceCard
                   key={inv.id}
                   invoice={inv}
@@ -615,7 +626,7 @@ const ClientDashboard: React.FC = () => {
       )}
 
       {/* ─── BILLING SECTION ─── */}
-      {myBilling.length > 0 && (
+      {(visibleBilling.length > 0 || billingInPrep.length > 0) && (
         <div className="dashboard-body" style={{ maxWidth: 1100, margin: '0 auto', padding: '0 24px 24px' }}>
           <div style={{ background: 'var(--white)', borderRadius: 20, border: '1px solid var(--border)', overflow: 'hidden', boxShadow: 'var(--shadow-xs)' }}>
             <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
@@ -628,7 +639,16 @@ const ClientDashboard: React.FC = () => {
               <div style={{ fontSize: 13, color: 'var(--slate)' }}>Post-service billing records</div>
             </div>
             <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
-              {myBilling.map(bill => (
+              {billingInPrep.map(j => (
+                <div key={j.id} style={{ background: 'var(--snow)', border: '1px dashed var(--border)', borderRadius: 12, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <span style={{ fontSize: 20 }}>📋</span>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>Billing statement for {j.id} is being prepared</div>
+                    <div style={{ fontSize: 12, color: 'var(--slate)' }}>{j.serviceType} · completed {j.preferredDate} — you&apos;ll be notified the moment it&apos;s ready.</div>
+                  </div>
+                </div>
+              ))}
+              {visibleBilling.map(bill => (
                 <BillingCard key={bill.id} billing={bill} viewerRole="client" />
               ))}
             </div>
@@ -637,7 +657,7 @@ const ClientDashboard: React.FC = () => {
       )}
 
       {/* ─── CHAT HISTORY (7-day retention → JSON archives) ─── */}
-      <div className="dashboard-body" style={{ maxWidth: 1100, margin: '0 auto', padding: '0 24px 24px' }}>
+      <div id="chat-history" className="dashboard-body" style={{ maxWidth: 1100, margin: '0 auto', padding: '0 24px 24px', scrollMarginTop: 90 }}>
         <ChatHistorySection role="client" />
       </div>
 

@@ -132,7 +132,7 @@ const PriceCard: React.FC = () => {
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(255,107,74,0.1)', border: '1px solid rgba(255,107,74,0.2)', borderRadius: 10, padding: '10px 12px', marginBottom: 16 }}>
         <span style={{ fontSize: 16 }}>🔐</span>
         <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.7)', lineHeight: 1.4 }}>
-          <strong style={{ color: 'var(--ember)', fontWeight: 700 }}>₱300–₱500</strong> reservation fee locks your slot. Balance paid after service.
+          <strong style={{ color: 'var(--ember)', fontWeight: 700 }}>No upfront payment</strong> — book now, settle after the service is completed.
         </div>
       </div>
       <Button variant="primary" fullWidth onClick={() => router.push('/book')} style={{ fontSize: 14, fontWeight: 800 }}>Book in Minutes →</Button>
@@ -159,7 +159,7 @@ const StatCounter: React.FC<{ value: string; label: string; sub: string; delay: 
 };
 
 // ─── SERVICE CARD ─────────────────────────────────────────────────────────────
-const ServiceCard: React.FC<{ icon: string; title: string; desc: string; prices: { type: string; price: number }[]; fee: number; badge?: string; delay: number }> = ({ icon, title, desc, prices, fee, badge, delay }) => {
+const ServiceCard: React.FC<{ icon: string; title: string; desc: string; prices: { type: string; price: number }[]; fee?: number; badge?: string; delay: number }> = ({ icon, title, desc, prices, badge, delay }) => {
   const router = useRouter();
   const ref = useReveal();
   return (
@@ -187,8 +187,8 @@ const ServiceCard: React.FC<{ icon: string; title: string; desc: string; prices:
         </div>
         <div style={{ padding: '16px 24px 22px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'linear-gradient(to bottom, transparent, var(--snow))' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(255,107,74,0.08)', border: '1px solid rgba(255,107,74,0.15)', borderRadius: 99, padding: '4px 12px' }}>
-            <span style={{ fontSize: 11 }}>🔒</span>
-            <span style={{ fontSize: 12, color: 'var(--ember-dark)', fontWeight: 700 }}>₱{fee} to reserve</span>
+            <span style={{ fontSize: 11 }}>✅</span>
+            <span style={{ fontSize: 12, color: 'var(--ember-dark)', fontWeight: 700 }}>No upfront payment</span>
           </div>
           <Button variant="primary" size="sm" onClick={() => router.push('/book')}>Book →</Button>
         </div>
@@ -393,7 +393,7 @@ const LandingPage: React.FC = () => {
             <div className="how-connector-line hide-mobile" style={{ position: 'absolute', top: 44, left: 'calc(16.66% + 44px)', right: 'calc(16.66% + 44px)', height: 2, background: 'linear-gradient(90deg, var(--polar), var(--frost), var(--polar))', backgroundSize: '200% 100%', animation: 'gradientShift 3s ease infinite', zIndex: 0 }} />
             <div className="how-steps-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 40, position: 'relative', zIndex: 1 }}>
               <HowStep num={1} icon="📋" title="Pick Your Service" desc="Choose cleaning type, AC type, and units. Get an instant locked-in price." delay={0} />
-              <HowStep num={2} icon="💳" title="Pay ₱300–500 to Reserve" desc="A small reservation fee confirms your slot and technician. No surprises." delay={150} />
+              <HowStep num={2} icon="✅" title="We Confirm Your Booking" desc="ACT reviews your request, assigns your accredited technician, and confirms your schedule. No upfront payment." delay={150} />
               <HowStep num={3} icon="🧑‍🔧" title="Technician Arrives On Time" desc="Accredited tech shows up, completes the job, and you settle the balance." delay={300} />
             </div>
           </div>
@@ -486,16 +486,16 @@ const LandingPage: React.FC = () => {
             Ready for a Cooler,<br />Cleaner Home?
           </h2>
           <p className="anim-fade-up d-200" style={{ color: 'rgba(255,255,255,0.65)', fontSize: 17, marginBottom: 40, lineHeight: 1.7 }}>
-            Book your accredited aircon service today. ₱300 reserves your slot — balance after service. No surprises.
+            Book your accredited aircon service today. No upfront payment — settle after the service. No surprises.
           </p>
           <div className="cta-buttons-row anim-fade-up d-300" style={{ display: 'flex', gap: 14, justifyContent: 'center', flexWrap: 'wrap' }}>
             <Button variant="primary" size="lg" onClick={() => router.push('/book')} style={{ fontWeight: 800, fontSize: 16 }}>Book Your Service →</Button>
-            <a href="https://wa.me/639170000000" target="_blank" rel="noopener noreferrer"
-              style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 10, background: '#25D366', color: 'white', padding: '15px 28px', borderRadius: 12, textDecoration: 'none', fontWeight: 700, fontSize: 16, fontFamily: 'var(--font-body)', transition: 'all 0.2s', boxShadow: '0 4px 14px rgba(37,211,102,0.4)' }}
-              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.transform = 'translateY(-2px)'; }}
-              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = ''; }}>
-              💬 Chat on WhatsApp
-            </a>
+            <button onClick={() => router.push('/contact')}
+              style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 10, background: 'rgba(255,255,255,0.1)', border: '1.5px solid rgba(255,255,255,0.25)', color: 'white', padding: '15px 28px', borderRadius: 12, cursor: 'pointer', fontWeight: 700, fontSize: 16, fontFamily: 'var(--font-body)', transition: 'all 0.2s' }}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.18)'; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.1)'; }}>
+              💬 Message Us
+            </button>
           </div>
           <p className="anim-fade-up d-400" style={{ marginTop: 24, fontSize: 13, color: 'rgba(255,255,255,0.35)' }}>
             Response within 1 hour · Mon–Sat 8AM–6PM

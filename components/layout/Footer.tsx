@@ -72,7 +72,7 @@ const Footer: React.FC = () => {
             {/* Contact points */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 32 }}>
               {[
-                { icon: '📱', label: '+63 9XX XXX XXXX', sub: 'WhatsApp / Viber' },
+                { icon: '📱', label: '+63 9XX XXX XXXX', sub: 'Call / Text' },
                 { icon: '📧', label: 'hello@act.ph', sub: 'Email us anytime' },
                 { icon: '⏰', label: 'Mon–Sat 8AM–6PM', sub: 'Service hours' },
               ].map((c, i) => (

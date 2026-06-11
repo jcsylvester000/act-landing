@@ -669,9 +669,10 @@ const TechniciansPanel: React.FC<{ technicians: Technician[] }> = ({ technicians
 
 // ─── FINANCE PANEL ────────────────────────────────────────────────────────────
 const FinancePanel: React.FC<{ jobs: Job[] }> = ({ jobs }) => {
+  const { billingStatements } = useStore();
   const completed = jobs.filter(j => j.status === 'Completed');
   const totalRevenue = completed.reduce((s, j) => s + j.totalPrice, 0);
-  const totalFees = completed.reduce((s, j) => s + j.reservationFee, 0);
+  const totalFees = (billingStatements ?? []).filter(b => b.status === 'Paid').reduce((s, b) => s + (b.amountPaidAtClose ?? 0), 0);
   const outstanding = completed.filter(j => j.paymentStatus === 'Fee paid').reduce((s, j) => s + j.balanceDue, 0);
   const collected = completed.filter(j => j.paymentStatus === 'Fully paid').reduce((s, j) => s + j.totalPrice, 0);
 
@@ -683,7 +684,7 @@ const FinancePanel: React.FC<{ jobs: Job[] }> = ({ jobs }) => {
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16, marginBottom: 32 }}>
         <StatCard label="Total Revenue (Completed)" value={`₱${totalRevenue.toLocaleString()}`} icon="💰" accent="var(--polar)" />
-        <StatCard label="Reservation Fees Collected" value={`₱${totalFees.toLocaleString()}`} icon="✅" accent="var(--verified)" />
+        <StatCard label="Payments Received (Receipts)" value={`₱${totalFees.toLocaleString()}`} icon="✅" accent="var(--verified)" />
         <StatCard label="Outstanding Balances" value={`₱${outstanding.toLocaleString()}`} icon="⏳" accent="var(--caution)" />
         <StatCard label="Fully Collected" value={`₱${collected.toLocaleString()}`} icon="🏦" accent="var(--midnight)" />
       </div>

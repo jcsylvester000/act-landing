@@ -153,14 +153,14 @@ const CoveragePage: React.FC = () => {
             Not seeing your area?
           </h3>
           <p style={{ color: 'var(--slate)', marginBottom: 24, maxWidth: 500, margin: '0 auto 24px', lineHeight: 1.6 }}>
-            We&apos;re expanding! Send us a message on WhatsApp or contact us — we may be able to accommodate you, or add your area to our next expansion.
+            We&apos;re expanding! Send us a message or contact us — we may be able to accommodate you, or add your area to our next expansion.
           </p>
           <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
-            <Button variant="primary" onClick={() => window.open('https://wa.me/639XXXXXXXXX', '_blank')}>
-              📱 Message on WhatsApp
+            <Button variant="primary" onClick={() => router.push('/contact')}>
+              💬 Contact Us
             </Button>
-            <Button variant="secondary" onClick={() => router.push('/contact')}>
-              Contact Us
+            <Button variant="secondary" onClick={() => router.push('/book')}>
+              Book a Service
             </Button>
           </div>
         </div>

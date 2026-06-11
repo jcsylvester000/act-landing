@@ -53,7 +53,7 @@ const ContactPage: React.FC = () => {
             <h2 style={{ fontSize: 24, fontWeight: 800, fontFamily: 'var(--font-display)', marginBottom: 32 }}>Contact Info</h2>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 24, marginBottom: 40 }}>
               {[
-                { icon: '📱', label: 'WhatsApp / Viber', value: '+63 9XX XXX XXXX', sub: 'Mon–Sat, 8AM–6PM' },
+                { icon: '📱', label: 'Call / Text', value: '+63 9XX XXX XXXX', sub: 'Mon–Sat, 8AM–6PM' },
                 { icon: '📧', label: 'Email', value: 'hello@act.ph', sub: 'Responses within 24 hours' },
                 { icon: '📍', label: 'Office', value: 'Biñan, Laguna', sub: 'By appointment only' },
                 { icon: '⏰', label: 'Service Hours', value: 'Monday – Saturday', sub: '8:00 AM – 6:00 PM' },
@@ -78,9 +78,8 @@ const ContactPage: React.FC = () => {
             <div style={{ background: 'var(--snow)', border: '1px solid var(--border)', borderRadius: 16, padding: 24 }}>
               <h3 style={{ fontWeight: 800, marginBottom: 16, fontFamily: 'var(--font-display)' }}>Quick Actions</h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <Button variant="primary" style={{ background: '#25D366', borderColor: '#25D366' }}
-                  onClick={() => window.open('https://wa.me/639XXXXXXXXX', '_blank')}>
-                  📱 Chat on WhatsApp
+                <Button variant="primary" onClick={() => router.push('/dashboard#chat-history')}>
+                  💬 View Chat History
                 </Button>
                 <Button variant="secondary" onClick={() => router.push('/book')}>
                   📅 Book a Service
@@ -99,7 +98,7 @@ const ContactPage: React.FC = () => {
                 <div style={{ fontSize: 64, marginBottom: 20 }}>✅</div>
                 <h3 style={{ fontSize: 22, fontWeight: 800, fontFamily: 'var(--font-display)', marginBottom: 12 }}>Message Received!</h3>
                 <p style={{ color: 'var(--slate)', lineHeight: 1.6, marginBottom: 28 }}>
-                  Thank you for reaching out. Our team will get back to you within 24 hours. For faster response, try our WhatsApp.
+                  Thank you for reaching out. Our team will get back to you within 24 hours. For faster response, message us in-app from your dashboard.
                 </p>
                 <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
                   <Button variant="primary" onClick={() => setSubmitted(false)}>Send Another</Button>
