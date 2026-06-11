@@ -7,10 +7,11 @@ import type { Job, Message } from '@/store';
 import { Button, Badge, StatCard, Modal, StarRating, Toast, Divider, Peso } from '@/components/ui';
 import InvoiceCard from '@/components/billing/InvoiceCard';
 import BillingCard from '@/components/billing/BillingCard';
+import ChatHistorySection from '@/components/chat/ChatHistory';
 
 const ClientDashboard: React.FC = () => {
   const router = useRouter();
-  const { currentUser, jobs, updateJob, updateUser, addNotification, messages, sendMessage, markMessagesRead, respondToCalendarInvite, serviceInvoices, billingStatements, respondToServiceInvoice } = useStore();
+  const { currentUser, jobs, updateJob, updateUser, addNotification, messages, sendMessage, markMessagesRead, respondToCalendarInvite, serviceInvoices, billingStatements, respondToServiceInvoice, archiveExpiredChats } = useStore();
 
   // ─── ALL STATE (hooks first) ──────────────────────────────────────────────
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
@@ -37,6 +38,9 @@ const ClientDashboard: React.FC = () => {
       setAuthChecked(true);
     }
   }, [currentUser, router]);
+
+  // 7-day chat retention: move expired live messages into JSON archives
+  useEffect(() => { archiveExpiredChats(); }, [archiveExpiredChats]);
 
   const showToast = (message: string, type: 'success' | 'error' | 'info' | 'warning' = 'success') => {
     setToast({ message, type, visible: true });
@@ -631,6 +635,11 @@ const ClientDashboard: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* ─── CHAT HISTORY (7-day retention → JSON archives) ─── */}
+      <div className="dashboard-body" style={{ maxWidth: 1100, margin: '0 auto', padding: '0 24px 24px' }}>
+        <ChatHistorySection role="client" />
+      </div>
 
       {/* Invoice Response Modal */}
       <Modal

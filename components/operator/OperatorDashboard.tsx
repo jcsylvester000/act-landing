@@ -7,6 +7,7 @@ import type { Job, Message, TimeSlot, ServiceInvoice, BillingStatement, InvoiceL
 import { Button, Badge, Card, Modal, Input, Toast } from '@/components/ui';
 import InvoiceCard from '@/components/billing/InvoiceCard';
 import BillingCard from '@/components/billing/BillingCard';
+import ChatHistorySection from '@/components/chat/ChatHistory';
 import { useBreakpoint } from '@/hooks/useBreakpoint';
 
 // ─── SIDEBAR ──────────────────────────────────────────────────────────────────
@@ -611,6 +612,7 @@ const MessagesPanel: React.FC<{ jobs: Job[]; initialJobId?: string | null }> = (
   };
 
   return (
+    <>
     <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', height: isMobile ? 'auto' : 'calc(100vh - 160px)', minHeight: 500, gap: 20 }}>
       {/* Thread list */}
       <div style={{ width: isMobile ? '100%' : 280, maxHeight: isMobile ? 220 : undefined, flexShrink: 0, background: 'white', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
@@ -772,6 +774,8 @@ const MessagesPanel: React.FC<{ jobs: Job[]; initialJobId?: string | null }> = (
         )}
       </Modal>
     </div>
+    <ChatHistorySection role="operator" />
+    </>
   );
 };
 
@@ -1228,7 +1232,7 @@ const ProfilePanel: React.FC = () => {
 // ─── MAIN OPERATOR DASHBOARD ───────────────────────────────────────────────────
 const OperatorDashboard: React.FC = () => {
   const router = useRouter();
-  const { currentUser, jobs, messages } = useStore();
+  const { currentUser, jobs, messages, archiveExpiredChats } = useStore();
   const { isMobile, isTablet } = useBreakpoint();
   const isNarrow = isMobile || isTablet;
 
@@ -1243,6 +1247,9 @@ const OperatorDashboard: React.FC = () => {
       router.push(currentUser.role === 'admin' ? '/admin' : '/dashboard');
     }
   }, [currentUser, router]);
+
+  // 7-day chat retention: move expired live messages into JSON archives
+  useEffect(() => { archiveExpiredChats(); }, [archiveExpiredChats]);
 
   if (!currentUser || currentUser.role !== 'operator') return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--midnight)' }}>

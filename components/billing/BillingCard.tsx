@@ -153,6 +153,21 @@ const BillingCard: React.FC<Props> = ({
           </div>
         )}
 
+        {/* Proof of payment — visible to client, operator, and admin */}
+        {billing.status === 'Paid' && (
+          <div style={{ background: '#ECFDF5', border: '1px solid #A7F3D0', borderRadius: 10, padding: '12px 14px', marginBottom: 12 }}>
+            <div style={{ fontSize: 12, fontWeight: 800, color: '#065F46', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 6 }}>💚 Proof of Payment</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, fontSize: 13 }}>
+              <div><span style={{ color: 'var(--slate)' }}>Official Receipt: </span><strong style={{ fontFamily: 'var(--font-mono)' }}>{billing.receiptNumber || '—'}</strong></div>
+              <div><span style={{ color: 'var(--slate)' }}>Method: </span><strong>{billing.paymentMethod || '—'}</strong></div>
+              {billing.paymentReference && <div><span style={{ color: 'var(--slate)' }}>Reference: </span><strong style={{ fontFamily: 'var(--font-mono)' }}>{billing.paymentReference}</strong></div>}
+              {billing.checkNumber && <div><span style={{ color: 'var(--slate)' }}>Check No.: </span><strong style={{ fontFamily: 'var(--font-mono)' }}>{billing.checkNumber}</strong></div>}
+              <div><span style={{ color: 'var(--slate)' }}>Amount Paid: </span><strong style={{ fontFamily: 'var(--font-mono)' }}>₱{(billing.amountPaidAtClose ?? billing.totalAmount).toLocaleString()}</strong></div>
+              {billing.paidAt && <div><span style={{ color: 'var(--slate)' }}>Date: </span><strong>{new Date(billing.paidAt).toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' })}</strong></div>}
+            </div>
+          </div>
+        )}
+
         {/* Actions by role */}
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {/* Operator actions */}

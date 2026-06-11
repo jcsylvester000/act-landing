@@ -8,6 +8,7 @@ import type { Job, Technician, Message, ServiceInvoice, BillingStatement } from 
 import { Button, Badge, Card, StatCard, Modal, Select, Input, Toast } from '@/components/ui';
 import InvoiceCard from '@/components/billing/InvoiceCard';
 import BillingCard from '@/components/billing/BillingCard';
+import ChatHistorySection from '@/components/chat/ChatHistory';
 import { exportBillingCSV, exportJobsCSV, exportMonthlySummaryCSV } from '@/components/export/ExportUtils';
 
 // ─── ADMIN SIDEBAR ────────────────────────────────────────────────────────────
@@ -1531,6 +1532,7 @@ const MessagesMonitorPanel: React.FC<{ jobs: Job[] }> = ({ jobs }) => {
           )}
         </div>
       </div>
+      <div style={{ marginTop: 20 }}><ChatHistorySection role="admin" /></div>
     </div>
   );
 };
@@ -1545,6 +1547,7 @@ const AccountingPanel: React.FC = () => {
   const [rejectNote, setRejectNote] = useState('');
   const [payingId, setPayingId] = useState<string | null>(null);
   const [payMethod, setPayMethod] = useState<'GCash' | 'Cash' | 'Bank Transfer' | 'Check'>('Cash');
+  const [payRef, setPayRef] = useState('');
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' | 'warning'; visible: boolean }>({ message: '', type: 'success', visible: false });
   const showToast = (msg: string, type: 'success' | 'error' | 'info' | 'warning' = 'success') => { setToast({ message: msg, type, visible: true }); setTimeout(() => setToast(t => ({ ...t, visible: false })), 3000); };
 
@@ -1763,11 +1766,12 @@ const AccountingPanel: React.FC = () => {
               </button>
             ))}
           </div>
+          <Input label="Payment Reference (proof of payment)" value={payRef} onChange={e => setPayRef(e.target.value)} placeholder="GCash ref no., bank txn ID, check no.…" />
           <div style={{ display: 'flex', gap: 10 }}>
-            <Button variant="ghost" fullWidth onClick={() => setPayingId(null)}>Cancel</Button>
+            <Button variant="ghost" fullWidth onClick={() => { setPayingId(null); setPayRef(''); }}>Cancel</Button>
             <Button variant="success" fullWidth onClick={() => {
-              if (payingId) { markBillingPaid(payingId, payMethod); showToast('Payment recorded successfully!'); }
-              setPayingId(null);
+              if (payingId) { markBillingPaid(payingId, payMethod, payRef.trim() || undefined); showToast('Payment recorded successfully!'); }
+              setPayingId(null); setPayRef('');
             }}>💚 Record Payment</Button>
           </div>
         </div>
@@ -1779,7 +1783,7 @@ const AccountingPanel: React.FC = () => {
 // ─── MAIN ADMIN DASHBOARD ─────────────────────────────────────────────────────
 const AdminDashboard: React.FC = () => {
   const router = useRouter();
-  const { currentUser, jobs, technicians } = useStore();
+  const { currentUser, jobs, technicians, archiveExpiredChats } = useStore();
   const { isMobile, isTablet } = useBreakpoint();
   const isNarrow = isMobile || isTablet;
   const [activePanel, setActivePanel] = useState('dashboard');
@@ -1793,6 +1797,9 @@ const AdminDashboard: React.FC = () => {
       router.push('/dashboard');
     }
   }, [currentUser, router]);
+
+  // 7-day chat retention: move expired live messages into JSON archives
+  useEffect(() => { archiveExpiredChats(); }, [archiveExpiredChats]);
 
   if (!currentUser || currentUser.role !== 'admin') return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--midnight)' }}>

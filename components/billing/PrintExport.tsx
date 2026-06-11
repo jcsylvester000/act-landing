@@ -182,6 +182,11 @@ export const BillingPrintDocument: React.FC<{ billing: BillingStatement }> = ({ 
           <span>Payment Method</span><span>{billing.paymentMethod}</span>
         </div>
       )}
+      {billing.status === 'Paid' && billing.paymentReference && (
+        <div className="print-totals-row paid" style={{ fontSize: 12 }}>
+          <span>Payment Reference</span><span>{billing.paymentReference}</span>
+        </div>
+      )}
     </div>
 
     {billing.workNotes && <div className="print-notes"><strong>Work Performed:</strong> {billing.workNotes}</div>}

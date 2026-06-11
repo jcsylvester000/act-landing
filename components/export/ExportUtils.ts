@@ -84,3 +84,11 @@ export function exportMonthlySummaryCSV(billingStatements: BillingStatement[], j
   ]);
   downloadCSV('ACT_Monthly_Summary.csv', [headers, ...rows]);
 }
+
+export function downloadJSON(filename: string, data: unknown): void {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}

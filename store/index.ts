@@ -124,6 +124,37 @@ export interface Message {
   readBy: string[];
 }
 
+// ─── CHAT ARCHIVES (7-day retention → JSON chat history) ─────────────────────
+// Live chats never stay on the server longer than CHAT_RETENTION_DAYS.
+// archiveExpiredChats() moves expired messages into JSON-shaped ChatArchive
+// records (one per job thread). In the future Neon backend this maps to a
+// scheduled job writing rows into a chat_archives table with a JSON payload.
+export const CHAT_RETENTION_DAYS = 7;
+
+export interface ArchivedMessage {
+  id: string;
+  senderId: string;
+  senderName: string;
+  senderRole: MessageSenderRole;
+  content: string;
+  type: MessageType;
+  createdAt: string;
+}
+
+export interface ChatArchive {
+  id: string;            // ARC-<jobId>
+  jobId: string;
+  clientId: string;
+  clientName: string;
+  operatorId?: string;
+  operatorName?: string;
+  archivedAt: string;
+  fromDate: string;
+  toDate: string;
+  messageCount: number;
+  messages: ArchivedMessage[]; // the JSON chat-history payload
+}
+
 // ─── QUICK REPLY TEMPLATES ────────────────────────────────────────────────────
 // Pre-written messages the admin can send in one click — replaces texting on Messenger
 export interface QuickReplyTemplate {
@@ -246,6 +277,7 @@ export interface BillingStatement {
   dueDate?: string;
   amountPaidAtClose?: number;
   receiptNumber?: string;
+  paymentReference?: string;   // GCash ref no. / bank transaction ID — proof of payment
   checkNumber?: string;
   internalNotes?: string;
   createdAt: string;
@@ -273,6 +305,7 @@ interface AppState {
   technicians: Technician[];
   notifications: AppNotification[];
   messages: Message[];
+  chatArchives: ChatArchive[];
   invoices: Invoice[];
   serviceInvoices: ServiceInvoice[];
   billingStatements: BillingStatement[];
@@ -298,6 +331,7 @@ interface AppState {
   // Messages
   sendMessage: (msg: Omit<Message, 'id' | 'createdAt'>) => Message;
   markMessagesRead: (jobId: string, userId: string) => void;
+  archiveExpiredChats: () => number;
   respondToCalendarInvite: (messageId: string, accepted: boolean, userId: string) => void;
 
   // Operators / Users
@@ -322,7 +356,7 @@ interface AppState {
   submitBillingToAdmin: (id: string) => void;
   adminReviewBilling: (id: string, approved: boolean, adminNotes?: string) => void;
   sendBillingToClient: (id: string) => void;
-  markBillingPaid: (id: string, paymentMethod: BillingStatement['paymentMethod']) => void;
+  markBillingPaid: (id: string, paymentMethod: BillingStatement['paymentMethod'], paymentReference?: string) => void;
   markBillingOverdue: (id: string) => void;
 }
 
@@ -533,6 +567,7 @@ export const useStore = create<AppState>()(
       technicians: seedTechnicians,
       notifications: [],
       messages: seedMessages,
+      chatArchives: [],
       invoices: [],
       serviceInvoices: seedServiceInvoices,
       billingStatements: seedBillingStatements,
@@ -574,6 +609,21 @@ export const useStore = create<AppState>()(
         if (!prevJob) return;
         if (u.status === 'Completed' && prevJob.status !== 'Completed') {
           get().addNotification({ userId: prevJob.clientId, jobId: id, message: `Your ${prevJob.serviceType} service is complete! Please rate your experience — it takes just 5 seconds. ⭐`, type: 'success', read: false });
+          // Guarantee: every completed job has a billing statement (full proof-of-payment trail)
+          if (!get().billingStatements.some(b => b.jobId === id)) {
+            const opId = prevJob.operatorId || 'ADMIN001';
+            const opName = prevJob.operatorName || 'ACT Admin';
+            get().createBillingStatement({
+              jobId: id, clientId: prevJob.clientId, clientName: prevJob.clientName,
+              operatorId: opId, operatorName: opName,
+              technicianName: u.technicianName || prevJob.technicianName,
+              lineItems: [{ id: '1', description: `${prevJob.serviceType} — ${prevJob.acType} (×${prevJob.numberOfUnits} unit${prevJob.numberOfUnits > 1 ? 's' : ''})`, category: 'Service', quantity: prevJob.numberOfUnits, unitPrice: prevJob.numberOfUnits > 0 ? prevJob.totalPrice / prevJob.numberOfUnits : prevJob.totalPrice, amount: prevJob.totalPrice }],
+              subtotal: prevJob.totalPrice, reservationFeePaid: prevJob.reservationFee,
+              amountDue: Math.max(0, prevJob.totalPrice - prevJob.reservationFee), totalAmount: prevJob.totalPrice,
+              status: 'Draft', workNotes: u.techFieldNotes || prevJob.techFieldNotes,
+            });
+            get().addNotification({ userId: opId, jobId: id, message: `A draft billing statement was auto-created for completed job ${id}. Review and submit it to admin.`, type: 'info', read: false });
+          }
         }
         if (u.status === 'Cancelled' && prevJob.status !== 'Cancelled') {
           get().addNotification({ userId: 'ADMIN001', jobId: id, message: `Job ${id} (${prevJob.clientName}) was cancelled. ${u.cancellationReason ? 'Reason: ' + u.cancellationReason : ''}`, type: 'warning', read: false });
@@ -597,6 +647,33 @@ export const useStore = create<AppState>()(
       sendMessage: (m) => { const msg: Message = { ...m, id: 'MSG' + generateId(), createdAt: new Date().toISOString() }; set(s => ({ messages: [...s.messages, msg] })); return msg; },
       markMessagesRead: (jid, uid) => set(s => ({ messages: s.messages.map(m => m.jobId === jid && !m.readBy.includes(uid) ? { ...m, readBy: [...m.readBy, uid] } : m) })),
       respondToCalendarInvite: (mid, accepted, uid) => set(s => ({ messages: s.messages.map(m => m.id === mid && m.calendarData ? { ...m, calendarData: { ...m.calendarData, accepted }, readBy: [...new Set([...m.readBy, uid])] } : m) })),
+      archiveExpiredChats: () => {
+        const cutoff = Date.now() - CHAT_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+        const { messages, jobs } = get();
+        const expired = messages.filter(m => new Date(m.createdAt).getTime() < cutoff);
+        if (expired.length === 0) return 0;
+        const live = messages.filter(m => new Date(m.createdAt).getTime() >= cutoff);
+        const byJob: Record<string, Message[]> = {};
+        expired.forEach(m => { (byJob[m.jobId] = byJob[m.jobId] || []).push(m); });
+        const now = new Date().toISOString();
+        set(s => {
+          const archives = [...s.chatArchives];
+          Object.entries(byJob).forEach(([jobId, msgs]) => {
+            const job = jobs.find(j => j.id === jobId);
+            const slim: ArchivedMessage[] = msgs.map(m => ({ id: m.id, senderId: m.senderId, senderName: m.senderName, senderRole: m.senderRole, content: m.content, type: m.type, createdAt: m.createdAt }));
+            const idx = archives.findIndex(a => a.jobId === jobId);
+            if (idx >= 0) {
+              const merged = [...archives[idx].messages, ...slim].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+              archives[idx] = { ...archives[idx], messages: merged, messageCount: merged.length, archivedAt: now, fromDate: merged[0].createdAt, toDate: merged[merged.length - 1].createdAt };
+            } else {
+              const sorted = [...slim].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+              archives.push({ id: 'ARC-' + jobId, jobId, clientId: job?.clientId || '', clientName: job?.clientName || 'Unknown', operatorId: job?.operatorId, operatorName: job?.operatorName, archivedAt: now, fromDate: sorted[0].createdAt, toDate: sorted[sorted.length - 1].createdAt, messageCount: sorted.length, messages: sorted });
+            }
+          });
+          return { chatArchives: archives, messages: live };
+        });
+        return expired.length;
+      },
 
       // ── OPERATORS / USERS ──────────────────────────────────────────────────
       addOperator: (op) => { const o: User = { ...op, id: 'OP' + generateId(), role: 'operator', operatorStatus: 'Active', createdAt: new Date().toISOString() }; set(s => ({ users: [...s.users, o] })); },
@@ -694,15 +771,17 @@ export const useStore = create<AppState>()(
         const bill = get().billingStatements.find(b => b.id === id);
         if (bill) get().addNotification({ userId: bill.clientId, jobId: bill.jobId, message: `Your billing statement ${bill.id} for ₱${bill.amountDue.toLocaleString()} is ready. ${bill.amountDue > 0 ? 'Balance due.' : 'Fully paid!'}`, type: bill.amountDue > 0 ? 'info' : 'success', read: false });
       },
-      markBillingPaid: (id, paymentMethod) => {
+      markBillingPaid: (id, paymentMethod, paymentReference) => {
         const now = new Date().toISOString();
         const bill = get().billingStatements.find(b => b.id === id);
         if (!bill) return;
         const amountPaidAtClose = bill.amountDue;
-        set(s => ({ billingStatements: s.billingStatements.map(b => b.id === id ? { ...b, status: 'Paid' as BillingStatus, paidAt: now, paymentMethod, amountDue: 0, amountPaidAtClose } : b) }));
+        const receiptNumber = bill.receiptNumber || ('OR-' + new Date().getFullYear() + '-' + String(Date.now()).slice(-6));
+        set(s => ({ billingStatements: s.billingStatements.map(b => b.id === id ? { ...b, status: 'Paid' as BillingStatus, paidAt: now, paymentMethod, paymentReference, receiptNumber, amountDue: 0, amountPaidAtClose } : b) }));
         get().updateJob(bill.jobId, { paymentStatus: 'Fully paid', balanceDue: 0 });
         get().addNotification({ userId: bill.operatorId, jobId: bill.jobId, message: `Billing ${id} for job ${bill.jobId} marked as paid (${paymentMethod}).`, type: 'success', read: false });
-        get().addNotification({ userId: bill.clientId, jobId: bill.jobId, message: `Payment received! Your service is now fully settled. Thank you for choosing ACT! 🙏`, type: 'success', read: false });
+        get().addNotification({ userId: bill.clientId, jobId: bill.jobId, message: `Payment received! Official Receipt ${receiptNumber} issued. Your service is now fully settled. Thank you for choosing ACT! 🙏`, type: 'success', read: false });
+        get().addNotification({ userId: 'ADMIN001', jobId: bill.jobId, message: `Payment recorded for ${bill.clientName} — ${paymentMethod}${paymentReference ? ' (ref: ' + paymentReference + ')' : ''}, OR ${receiptNumber}.`, type: 'success', read: false });
       },
       markBillingOverdue: (id) => {
         set(s => ({ billingStatements: s.billingStatements.map(b => b.id === id ? { ...b, status: 'Overdue' as BillingStatus } : b) }));
@@ -714,7 +793,7 @@ export const useStore = create<AppState>()(
       },
     }),
     {
-      name: 'act-store-v7',
+      name: 'act-store-v8',
       partialize: (s) => ({
         currentUser: s.currentUser,
         users: s.users,
@@ -722,6 +801,7 @@ export const useStore = create<AppState>()(
         technicians: s.technicians,
         notifications: s.notifications,
         messages: s.messages,
+        chatArchives: s.chatArchives,
         invoices: s.invoices,
         serviceInvoices: s.serviceInvoices,
         billingStatements: s.billingStatements,
