@@ -73,13 +73,34 @@ enum TimeSlot {
 
 enum TechnicianType {
   Inhouse
-  Outsourced
+  Outsource
 }
 
 enum SkillLevel {
   Junior
   Senior
-  Master
+  Lead
+}
+
+enum ClientType {
+  Residential
+  Commercial
+}
+
+enum ClientFollowUpStatus {
+  OnTrack    @map("On track")
+  DueSoon    @map("Due soon")
+  Overdue
+  NoResponse @map("No response")
+  Converted
+}
+
+enum LeadSource {
+  Referral
+  Organic
+  Facebook
+  WalkIn @map("Walk-in")
+  Other
 }
 
 enum AssignmentStatus {
@@ -137,11 +158,16 @@ model Client {
   phone                   String
   address                 String?
   city                    CoverageCity?
-  leadSource              String?
+  clientType              ClientType?
+  acUnits                 Int?
+  lastServiceDate         DateTime? @db.Date
+  operatorStatus          String?
+  assignedCities          CoverageCity[]
+  leadSource              LeadSource?
   preferredTechnicianId   String?
   preferredTechnician     Technician? @relation("PreferredTech", fields: [preferredTechnicianId], references: [id])
   nextDueDate             DateTime?
-  followUpStatus          FollowUpStatus?
+  followUpStatus          ClientFollowUpStatus?
   createdAt               DateTime  @default(now())
   updatedAt               DateTime  @updatedAt
 
@@ -162,7 +188,7 @@ model Technician {
   id                 String         @id @default(cuid())
   fullName           String
   phone              String
-  type               TechnicianType @default(Outsourced)
+  type               TechnicianType @default(Outsource)
   skillLevel         SkillLevel     @default(Junior)
   coverageCities     CoverageCity[]
   isAvailable        Boolean        @default(true)
@@ -188,8 +214,9 @@ model ServiceCatalogItem {
   name            String
   description     String?
   // Pricing: fixed per-unit for cleans; quote-required services keep null
-  pricePerUnitWindow Decimal? @db.Decimal(10, 2)
-  pricePerUnitSplit  Decimal? @db.Decimal(10, 2)
+  pricePerUnitWindow   Decimal? @db.Decimal(10, 2)
+  pricePerUnitSplit    Decimal? @db.Decimal(10, 2)
+  pricePerUnitCassette Decimal? @db.Decimal(10, 2)
   reservationFee     Decimal  @default(0) @db.Decimal(10, 2)
   requiresQuote      Boolean  @default(false)
   active             Boolean  @default(true)
@@ -377,6 +404,7 @@ model Invoice {
   billingStatus      BillingStatus?
   paymentMethod      PaymentMethod?
   receiptNumber      String?
+  paymentReference   String?        // GCash ref no. / bank txn ID — proof of payment
   checkNumber        String?
   revisionCount      Int            @default(0)
   notes              String?
@@ -396,6 +424,25 @@ model Invoice {
   @@index([kind])
   @@index([billingStatus])
   @@map("invoices")
+}
+
+// ─── CHAT ARCHIVES (7-day retention → JSON history) ──────────────────────────
+
+model ChatArchive {
+  id           String   @id @default(cuid())
+  jobId        String   @unique
+  clientId     String
+  clientName   String
+  operatorId   String?
+  operatorName String?
+  archivedAt   DateTime @default(now())
+  fromDate     DateTime
+  toDate       DateTime
+  messageCount Int
+  payload      Json     // ArchivedMessage[] — same shape the frontend downloads
+
+  @@index([clientId])
+  @@map("chat_archives")
 }
 
 // ─── MESSAGES (in-platform comms threads, per job) ────────────────────────────
